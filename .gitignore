@@ -1,0 +1,9 @@
+.env
+.env.*
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+vector_db/
+*.log
+.DS_Store

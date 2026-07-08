@@ -1,0 +1,15 @@
+celery==5.3.6
+redis[hiredis]==5.0.1
+redbeat==2.2.0
+sqlalchemy[asyncio]==2.0.25
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+pydantic==2.6.0
+pydantic-settings==2.1.0
+python-dotenv==1.0.1
+structlog==24.1.0
+httpx==0.26.0
+pandas==2.2.0
+numpy==1.26.4
+kombu==5.3.5
+pytest==7.4.4

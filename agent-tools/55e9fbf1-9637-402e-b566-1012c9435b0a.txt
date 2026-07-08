@@ -1,0 +1,1751 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.2, pytest-7.4.4, pluggy-1.6.0 -- D:\Developer\Python\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\as804\Desktop\ai-quant-trader-pro-v1-GrokBuild\worker
+plugins: anyio-4.13.0
+collecting ... collected 17 items
+
+tests/test_ai_tasks.py::test_normal_scan_flow_creates_order FAILED       [  5%]
+tests/test_ai_tasks.py::test_risk_blocked_skips_order FAILED             [ 11%]
+tests/test_ai_tasks.py::test_distributed_lock_prevents_duplicate_scan PASSED [ 17%]
+tests/test_ai_tasks.py::test_cache_set_lock_key_format PASSED            [ 23%]
+tests/test_ai_tasks.py::test_run_signal_scan_task_runs PASSED            [ 29%]
+tests/test_celery_app.py::test_celery_app_name PASSED                    [ 35%]
+tests/test_celery_app.py::test_queue_configuration PASSED                [ 41%]
+tests/test_celery_app.py::test_task_routes PASSED                        [ 47%]
+tests/test_celery_app.py::test_beat_schedule_exists PASSED               [ 52%]
+tests/test_celery_app.py::test_redbeat_scheduler PASSED                  [ 58%]
+tests/test_celery_app.py::test_tasks_registered PASSED                   [ 64%]
+tests/test_celery_app.py::test_stub_task_callable FAILED                 [ 70%]
+tests/test_market_tasks.py::test_sync_one_writes_redis_and_publishes PASSED [ 76%]
+tests/test_market_tasks.py::test_sync_one_invalid_quote_returns_false PASSED [ 82%]
+tests/test_market_tasks.py::test_sync_all_partial_failure PASSED         [ 88%]
+tests/test_market_tasks.py::test_sync_realtime_quotes_task_runs PASSED   [ 94%]
+tests/test_market_tasks.py::test_validate_quote_rejects_bad_data PASSED  [100%]
+
+================================== FAILURES ===================================
+_____________________ test_normal_scan_flow_creates_order _____________________
+
+    def test_normal_scan_flow_creates_order() -> None:
+        async def _run() -> None:
+            mock_ai = MagicMock()
+            mock_ai.analyze = AsyncMock(return_value=_make_analysis())
+    
+            mock_risk = MagicMock()
+            mock_risk.check_before_trade = AsyncMock(
+                return_value=RiskCheckResult(passed=True)
+            )
+    
+            mock_trade = MagicMock()
+            mock_trade.submit_order = AsyncMock(
+                return_value={"success": True, "order_id": "ord-1", "status": "FILLED"}
+            )
+    
+            mock_cache = MagicMock()
+            mock_cache.set_lock = AsyncMock(return_value=True)
+            mock_cache.release_lock = AsyncMock()
+            mock_cache.publish = AsyncMock()
+            mock_cache.close = AsyncMock()
+    
+            service = SignalScanService(
+                ai_analyzer=mock_ai,
+                risk_checker=mock_risk,
+                trade_submitter=mock_trade,
+                cache=mock_cache,
+                concurrency=1,
+                stock_limit=2,
+            )
+    
+            with (
+                patch(
+                    "services.signal_scan.get_active_strategies",
+                    AsyncMock(
+                        return_value=[
+                            {
+                                "id": 1,
+                                "name": "test",
+                                "trade_mode": "simulation",
+                            }
+                        ]
+                    ),
+                ),
+                patch(
+                    "services.signal_scan.get_strategy_stock_codes",
+                    AsyncMock(return_value=["000001"]),
+                ),
+                patch("services.signal_scan.has_valid_signal", AsyncMock(return_value=False)),
+            ):
+                result = await service.scan_all()
+    
+            assert result["stocks_scanned"] == 1
+            assert result["signals_generated"] == 1
+            assert result["signals_actionable"] == 1
+            assert result["orders_created"] == 1
+            assert result["risk_blocked"] == 0
+            mock_risk.check_before_trade.assert_awaited_once()
+            mock_trade.submit_order.assert_awaited_once()
+            mock_cache.publish.assert_awaited_once()
+    
+>       asyncio.run(_run())
+
+tests\test_ai_tasks.py:93: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+D:\Developer\Python\Lib\asyncio\runners.py:194: in run
+    return runner.run(main)
+D:\Developer\Python\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+D:\Developer\Python\Lib\asyncio\base_events.py:685: in run_until_complete
+    return future.result()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    async def _run() -> None:
+        mock_ai = MagicMock()
+        mock_ai.analyze = AsyncMock(return_value=_make_analysis())
+    
+        mock_risk = MagicMock()
+        mock_risk.check_before_trade = AsyncMock(
+            return_value=RiskCheckResult(passed=True)
+        )
+    
+        mock_trade = MagicMock()
+        mock_trade.submit_order = AsyncMock(
+            return_value={"success": True, "order_id": "ord-1", "status": "FILLED"}
+        )
+    
+        mock_cache = MagicMock()
+        mock_cache.set_lock = AsyncMock(return_value=True)
+        mock_cache.release_lock = AsyncMock()
+        mock_cache.publish = AsyncMock()
+        mock_cache.close = AsyncMock()
+    
+        service = SignalScanService(
+            ai_analyzer=mock_ai,
+            risk_checker=mock_risk,
+            trade_submitter=mock_trade,
+            cache=mock_cache,
+            concurrency=1,
+            stock_limit=2,
+        )
+    
+        with (
+            patch(
+                "services.signal_scan.get_active_strategies",
+                AsyncMock(
+                    return_value=[
+                        {
+                            "id": 1,
+                            "name": "test",
+                            "trade_mode": "simulation",
+                        }
+                    ]
+                ),
+            ),
+            patch(
+                "services.signal_scan.get_strategy_stock_codes",
+                AsyncMock(return_value=["000001"]),
+            ),
+            patch("services.signal_scan.has_valid_signal", AsyncMock(return_value=False)),
+        ):
+            result = await service.scan_all()
+    
+        assert result["stocks_scanned"] == 1
+        assert result["signals_generated"] == 1
+        assert result["signals_actionable"] == 1
+>       assert result["orders_created"] == 1
+E       assert 0 == 1
+
+tests\test_ai_tasks.py:87: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-07-08T10:23:03.785818Z [info     ] signal_scan_start              concurrency=1 force_refresh=False stock_limit=2 strategy_count=1
+2026-07-08T10:23:03.786817Z [error    ] signal_scan_stock_error        error=SignalScanService._build_order_payload() got an unexpected keyword argument 'strategy_id' stock_code=000001 strategy_id=1
+┌───────────────────── Traceback (most recent call last) ──────────────────────┐
+│ C:\Users\as804\Desktop\ai-quant-trader-pro-v1-GrokBuild\worker\services\sign │
+│ al_scan.py:189 in _scan_one                                                  │
+│                                                                              │
+│   186 │   │   │   │   stats["signals_actionable"] += 1                       │
+│   187 │   │   │   │   await self._publish_signal(code, signal, analysis)     │
+│   188 │   │   │   │                                                          │
+│ > 189 │   │   │   │   order_payload = await self._build_order_payload(       │
+│   190 │   │   │   │   │   code=code,                                         │
+│   191 │   │   │   │   │   action=action,                                     │
+│   192 │   │   │   │   │   signal=signal,                                     │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │            action = 'BUY'                                                │ │
+│ │          analysis = {                                                    │ │
+│ │                     │   'code': '000001',                                │ │
+│ │                     │   'signal_id': 'sig-001',                          │ │
+│ │                     │   'signal': {                                      │ │
+│ │                     │   │   'id': 'sig-001',                             │ │
+│ │                     │   │   'action': 'BUY',                             │ │
+│ │                     │   │   'confidence': 0.8,                           │ │
+│ │                     │   │   'risk_level': 'MEDIUM',                      │ │
+│ │                     │   │   'price_at': 10.0,                            │ │
+│ │                     │   │   'reason': 'test signal'                      │ │
+│ │                     │   },                                               │ │
+│ │                     │   'from_cache': False                              │ │
+│ │                     }                                                    │ │
+│ │              code = '000001'                                             │ │
+│ │        confidence = 0.8                                                  │ │
+│ │               exc = TypeError("SignalScanService._build_order_payload()  │ │
+│ │                     got an unexpected keyword argument 'strategy_id'")   │ │
+│ │     force_refresh = False                                                │ │
+│ │          lock_key = 'signal_scan_lock:000001:1'                          │ │
+│ │            locked = True                                                 │ │
+│ │              self = <services.signal_scan.SignalScanService object at    │ │
+│ │                     0x0000024823D511C0>                                  │ │
+│ │         semaphore = <asyncio.locks.Semaphore object at                   │ │
+│ │                     0x0000024823E106B0 [locked]>                         │ │
+│ │            signal = {                                                    │ │
+│ │                     │   'id': 'sig-001',                                 │ │
+│ │                     │   'action': 'BUY',                                 │ │
+│ │                     │   'confidence': 0.8,                               │ │
+│ │                     │   'risk_level': 'MEDIUM',                          │ │
+│ │                     │   'price_at': 10.0,                                │ │
+│ │                     │   'reason': 'test signal'                          │ │
+│ │                     }                                                    │ │
+│ │         signal_id = 'sig-001'                                            │ │
+│ │             stats = {                                                    │ │
+│ │                     │   'strategies': 1,                                 │ │
+│ │                     │   'stocks_scanned': 1,                             │ │
+│ │                     │   'signals_generated': 1,                          │ │
+│ │                     │   'signals_actionable': 1,                         │ │
+│ │                     │   'risk_blocked': 0,                               │ │
+│ │                     │   'orders_created': 0,                             │ │
+│ │                     │   'skipped_cached': 0,                             │ │
+│ │                     │   'skipped_locked': 0,                             │ │
+│ │                     │   'skipped_hold': 0,                               │ │
+│ │                     │   'errors': 1                                      │ │
+│ │                     }                                                    │ │
+│ │          strategy = {                                                    │ │
+│ │                     │   'id': 1,                                         │ │
+│ │                     │   'name': 'test',                                  │ │
+│ │                     │   'trade_mode': 'simulation'                       │ │
+│ │                     }                                                    │ │
+│ │       strategy_id = 1                                                    │ │
+│ │ strategy_id_param = 1                                                    │ │
+│ │        trade_mode = 'simulation'                                         │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────┘
+TypeError: SignalScanService._build_order_payload() got an unexpected keyword 
+argument 'strategy_id'
+
+2026-07-08T10:23:03.848551Z [info     ] signal_scan_done               errors=1 latency_ms=62 orders_created=0 risk_blocked=0 signals_actionable=1 signals_generated=1 skipped_cached=0 skipped_hold=0 skipped_locked=0 stocks_scanned=1 strategies=1
+________________________ test_risk_blocked_skips_order ________________________
+
+    def test_risk_blocked_skips_order() -> None:
+        async def _run() -> None:
+            mock_ai = MagicMock()
+            mock_ai.analyze = AsyncMock(return_value=_make_analysis())
+    
+            mock_risk = MagicMock()
+            mock_risk.check_before_trade = AsyncMock(
+                return_value=RiskCheckResult(
+                    passed=False,
+                    blocked_by=["MAX_SINGLE_POSITION"],
+                )
+            )
+    
+            mock_trade = MagicMock()
+            mock_trade.submit_order = AsyncMock()
+    
+            mock_cache = MagicMock()
+            mock_cache.set_lock = AsyncMock(return_value=True)
+            mock_cache.release_lock = AsyncMock()
+            mock_cache.publish = AsyncMock()
+            mock_cache.close = AsyncMock()
+    
+            service = SignalScanService(
+                ai_analyzer=mock_ai,
+                risk_checker=mock_risk,
+                trade_submitter=mock_trade,
+                cache=mock_cache,
+                concurrency=1,
+            )
+    
+            with (
+                patch(
+                    "services.signal_scan.get_active_strategies",
+                    AsyncMock(return_value=[{"id": 1, "trade_mode": "simulation"}]),
+                ),
+                patch(
+                    "services.signal_scan.get_strategy_stock_codes",
+                    AsyncMock(return_value=["000001"]),
+                ),
+                patch("services.signal_scan.has_valid_signal", AsyncMock(return_value=False)),
+            ):
+                result = await service.scan_all()
+    
+            assert result["signals_actionable"] == 1
+            assert result["risk_blocked"] == 1
+            assert result["orders_created"] == 0
+            mock_trade.submit_order.assert_not_awaited()
+    
+>       asyncio.run(_run())
+
+tests\test_ai_tasks.py:144: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+D:\Developer\Python\Lib\asyncio\runners.py:194: in run
+    return runner.run(main)
+D:\Developer\Python\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+D:\Developer\Python\Lib\asyncio\base_events.py:685: in run_until_complete
+    return future.result()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    async def _run() -> None:
+        mock_ai = MagicMock()
+        mock_ai.analyze = AsyncMock(return_value=_make_analysis())
+    
+        mock_risk = MagicMock()
+        mock_risk.check_before_trade = AsyncMock(
+            return_value=RiskCheckResult(
+                passed=False,
+                blocked_by=["MAX_SINGLE_POSITION"],
+            )
+        )
+    
+        mock_trade = MagicMock()
+        mock_trade.submit_order = AsyncMock()
+    
+        mock_cache = MagicMock()
+        mock_cache.set_lock = AsyncMock(return_value=True)
+        mock_cache.release_lock = AsyncMock()
+        mock_cache.publish = AsyncMock()
+        mock_cache.close = AsyncMock()
+    
+        service = SignalScanService(
+            ai_analyzer=mock_ai,
+            risk_checker=mock_risk,
+            trade_submitter=mock_trade,
+            cache=mock_cache,
+            concurrency=1,
+        )
+    
+        with (
+            patch(
+                "services.signal_scan.get_active_strategies",
+                AsyncMock(return_value=[{"id": 1, "trade_mode": "simulation"}]),
+            ),
+            patch(
+                "services.signal_scan.get_strategy_stock_codes",
+                AsyncMock(return_value=["000001"]),
+            ),
+            patch("services.signal_scan.has_valid_signal", AsyncMock(return_value=False)),
+        ):
+            result = await service.scan_all()
+    
+        assert result["signals_actionable"] == 1
+>       assert result["risk_blocked"] == 1
+E       assert 0 == 1
+
+tests\test_ai_tasks.py:140: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2026-07-08T10:23:04.528736Z [info     ] signal_scan_start              concurrency=1 force_refresh=False stock_limit=20 strategy_count=1
+2026-07-08T10:23:04.528736Z [error    ] signal_scan_stock_error        error=SignalScanService._build_order_payload() got an unexpected keyword argument 'strategy_id' stock_code=000001 strategy_id=1
+┌───────────────────── Traceback (most recent call last) ──────────────────────┐
+│ C:\Users\as804\Desktop\ai-quant-trader-pro-v1-GrokBuild\worker\services\sign │
+│ al_scan.py:189 in _scan_one                                                  │
+│                                                                              │
+│   186 │   │   │   │   stats["signals_actionable"] += 1                       │
+│   187 │   │   │   │   await self._publish_signal(code, signal, analysis)     │
+│   188 │   │   │   │                                                          │
+│ > 189 │   │   │   │   order_payload = await self._build_order_payload(       │
+│   190 │   │   │   │   │   code=code,                                         │
+│   191 │   │   │   │   │   action=action,                                     │
+│   192 │   │   │   │   │   signal=signal,                                     │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │            action = 'BUY'                                                │ │
+│ │          analysis = {                                                    │ │
+│ │                     │   'code': '000001',                                │ │
+│ │                     │   'signal_id': 'sig-001',                          │ │
+│ │                     │   'signal': {                                      │ │
+│ │                     │   │   'id': 'sig-001',                             │ │
+│ │                     │   │   'action': 'BUY',                             │ │
+│ │                     │   │   'confidence': 0.8,                           │ │
+│ │                     │   │   'risk_level': 'MEDIUM',                      │ │
+│ │                     │   │   'price_at': 10.0,                            │ │
+│ │                     │   │   'reason': 'test signal'                      │ │
+│ │                     │   },                                               │ │
+│ │                     │   'from_cache': False                              │ │
+│ │                     }                                                    │ │
+│ │              code = '000001'                                             │ │
+│ │        confidence = 0.8                                                  │ │
+│ │               exc = TypeError("SignalScanService._build_order_payload()  │ │
+│ │                     got an unexpected keyword argument 'strategy_id'")   │ │
+│ │     force_refresh = False                                                │ │
+│ │          lock_key = 'signal_scan_lock:000001:1'                          │ │
+│ │            locked = True                                                 │ │
+│ │              self = <services.signal_scan.SignalScanService object at    │ │
+│ │                     0x0000024821693C20>                                  │ │
+│ │         semaphore = <asyncio.locks.Semaphore object at                   │ │
+│ │                     0x0000024824181DF0 [locked]>                         │ │
+│ │            signal = {                                                    │ │
+│ │                     │   'id': 'sig-001',                                 │ │
+│ │                     │   'action': 'BUY',                                 │ │
+│ │                     │   'confidence': 0.8,                               │ │
+│ │                     │   'risk_level': 'MEDIUM',                          │ │
+│ │                     │   'price_at': 10.0,                                │ │
+│ │                     │   'reason': 'test signal'                          │ │
+│ │                     }                                                    │ │
+│ │         signal_id = 'sig-001'                                            │ │
+│ │             stats = {                                                    │ │
+│ │                     │   'strategies': 1,                                 │ │
+│ │                     │   'stocks_scanned': 1,                             │ │
+│ │                     │   'signals_generated': 1,                          │ │
+│ │                     │   'signals_actionable': 1,                         │ │
+│ │                     │   'risk_blocked': 0,                               │ │
+│ │                     │   'orders_created': 0,                             │ │
+│ │                     │   'skipped_cached': 0,                             │ │
+│ │                     │   'skipped_locked': 0,                             │ │
+│ │                     │   'skipped_hold': 0,                               │ │
+│ │                     │   'errors': 1                                      │ │
+│ │                     }                                                    │ │
+│ │          strategy = {'id': 1, 'trade_mode': 'simulation'}                │ │
+│ │       strategy_id = 1                                                    │ │
+│ │ strategy_id_param = 1                                                    │ │
+│ │        trade_mode = 'simulation'                                         │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────┘
+TypeError: SignalScanService._build_order_payload() got an unexpected keyword 
+argument 'strategy_id'
+
+2026-07-08T10:23:04.556483Z [info     ] signal_scan_done               errors=1 latency_ms=27 orders_created=0 risk_blocked=0 signals_actionable=1 signals_generated=1 skipped_cached=0 skipped_hold=0 skipped_locked=0 stocks_scanned=1 strategies=1
+___________________________ test_stub_task_callable ___________________________
+
+    def test_stub_task_callable() -> None:
+        task = app.tasks["tasks.run_signal_scan"]
+>       result = task.run()
+
+tests\test_celery_app.py:52: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tasks\ai.py:53: in run_signal_scan
+    raise self.retry(exc=exc) from exc
+D:\Developer\Python\Lib\site-packages\celery\app\task.py:720: in retry
+    raise_with_context(exc or Retry('Task can be retried', None))
+tasks\ai.py:42: in run_signal_scan
+    result = asyncio.run(_run())
+D:\Developer\Python\Lib\asyncio\runners.py:194: in run
+    return runner.run(main)
+D:\Developer\Python\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+D:\Developer\Python\Lib\asyncio\base_events.py:685: in run_until_complete
+    return future.result()
+tasks\ai.py:37: in _run
+    return await service.scan_all(force_refresh=force_refresh)
+services\signal_scan.py:109: in scan_all
+    codes = await get_strategy_stock_codes(strategy_id, limit=self.stock_limit)
+services\strategy_pool.py:70: in get_strategy_stock_codes
+    return await get_active_stock_codes(limit=limit)
+services\stock_pool.py:28: in get_active_stock_codes
+    result = await session.execute(
+D:\Developer\Python\Lib\site-packages\sqlalchemy\ext\asyncio\session.py:455: in execute
+    result = await greenlet_spawn(
+D:\Developer\Python\Lib\site-packages\sqlalchemy\util\_concurrency_py3k.py:200: in greenlet_spawn
+    result = context.throw(*sys.exc_info())
+D:\Developer\Python\Lib\site-packages\sqlalchemy\orm\session.py:2308: in execute
+    return self._execute_internal(
+D:\Developer\Python\Lib\site-packages\sqlalchemy\orm\session.py:2180: in _execute_internal
+    conn = self._connection_for_bind(bind)
+D:\Developer\Python\Lib\site-packages\sqlalchemy\orm\session.py:2047: in _connection_for_bind
+    return trans._connection_for_bind(engine, execution_options)
+<string>:2: in _connection_for_bind
+    ???
+D:\Developer\Python\Lib\site-packages\sqlalchemy\orm\state_changes.py:139: in _go
+    ret_value = fn(self, *arg, **kw)
+D:\Developer\Python\Lib\site-packages\sqlalchemy\orm\session.py:1143: in _connection_for_bind
+    conn = bind.connect()
+D:\Developer\Python\Lib\site-packages\sqlalchemy\engine\base.py:3269: in connect
+    return self._connection_cls(self)
+D:\Developer\Python\Lib\site-packages\sqlalchemy\engine\base.py:145: in __init__
+    self._dbapi_connection = engine.raw_connection()
+D:\Developer\Python\Lib\site-packages\sqlalchemy\engine\base.py:3293: in raw_connection
+    return self.pool.connect()
+D:\Developer\Python\Lib\site-packages\sqlalchemy\pool\base.py:452: in connect
+    return _ConnectionFairy._checkout(self)
+D:\Developer\Python\Lib\site-packages\sqlalchemy\pool\base.py:1269: in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+D:\Developer\Python\Lib\site-packages\sqlalchemy\pool\base.py:716: in checkout
+    rec = pool._do_get()
+D:\Developer\Python\Lib\site-packages\sqlalchemy\pool\impl.py:169: in _do_get
+    with util.safe_reraise():
+D:\Developer\Python\Lib\site-packages\sqlalchemy\util\langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+D:\Developer\Python\Lib\site-packages\sqlalchemy\pool\impl.py:167: in _do_get
+    return self._create_connection()
+D:\Developer\Python\Lib\site-packages\sqlalchemy\pool\base.py:393: in _create_connection
+    return _ConnectionRecord(self)
+D:\Developer\Python\Lib\site-packages\sqlalchemy\pool\base.py:678: in __init__
+    self.__connect()
+D:\Developer\Python\Lib\site-packages\sqlalchemy\pool\base.py:902: in __connect
+    with util.safe_reraise():
+D:\Developer\Python\Lib\site-packages\sqlalchemy\util\langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+D:\Developer\Python\Lib\site-packages\sqlalchemy\pool\base.py:898: in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+D:\Developer\Python\Lib\site-packages\sqlalchemy\engine\create.py:645: in connect
+    return dialect.connect(*cargs, **cparams)
+D:\Developer\Python\Lib\site-packages\sqlalchemy\engine\default.py:616: in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)
+D:\Developer\Python\Lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py:941: in connect
+    await_only(creator_fn(*arg, **kw)),
+D:\Developer\Python\Lib\site-packages\sqlalchemy\util\_concurrency_py3k.py:130: in await_only
+    return current.driver.switch(awaitable)  # type: ignore[no-any-return]
+D:\Developer\Python\Lib\site-packages\sqlalchemy\util\_concurrency_py3k.py:195: in greenlet_spawn
+    value = await result
+D:\Developer\Python\Lib\site-packages\asyncpg\connection.py:2329: in connect
+    return await connect_utils._connect(
+D:\Developer\Python\Lib\site-packages\asyncpg\connect_utils.py:1017: in _connect
+    raise last_error or exceptions.TargetServerAttributeNotMatched(
+D:\Developer\Python\Lib\site-packages\asyncpg\connect_utils.py:991: in _connect
+    conn = await _connect_addr(
+D:\Developer\Python\Lib\site-packages\asyncpg\connect_utils.py:828: in _connect_addr
+    return await __connect_addr(params, True, *args)
+D:\Developer\Python\Lib\site-packages\asyncpg\connect_utils.py:873: in __connect_addr
+    tr, pr = await connector
+D:\Developer\Python\Lib\site-packages\asyncpg\connect_utils.py:744: in _create_ssl_connection
+    tr, pr = await loop.create_connection(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <ProactorEventLoop running=False closed=True debug=False>
+protocol_factory = <function _create_ssl_connection.<locals>.<lambda> at 0x000002482439FEC0>
+host = 'localhost', port = 5432
+
+    async def create_connection(
+            self, protocol_factory, host=None, port=None,
+            *, ssl=None, family=0,
+            proto=0, flags=0, sock=None,
+            local_addr=None, server_hostname=None,
+            ssl_handshake_timeout=None,
+            ssl_shutdown_timeout=None,
+            happy_eyeballs_delay=None, interleave=None,
+            all_errors=False):
+        """Connect to a TCP server.
+    
+        Create a streaming transport connection to a given internet host and
+        port: socket family AF_INET or socket.AF_INET6 depending on host (or
+        family if specified), socket type SOCK_STREAM. protocol_factory must be
+        a callable returning a protocol instance.
+    
+        This method is a coroutine which will try to establish the connection
+        in the background.  When successful, the coroutine returns a
+        (transport, protocol) pair.
+        """
+        if server_hostname is not None and not ssl:
+            raise ValueError('server_hostname is only meaningful with ssl')
+    
+        if server_hostname is None and ssl:
+            # Use host as default for server_hostname.  It is an error
+            # if host is empty or not set, e.g. when an
+            # already-connected socket was passed or when only a port
+            # is given.  To avoid this error, you can pass
+            # server_hostname='' -- this will bypass the hostname
+            # check.  (This also means that if host is a numeric
+            # IP/IPv6 address, we will attempt to verify that exact
+            # address; this will probably fail, but it is possible to
+            # create a certificate for a specific IP address, so we
+            # don't judge it here.)
+            if not host:
+                raise ValueError('You must set server_hostname '
+                                 'when using ssl without a host')
+            server_hostname = host
+    
+        if ssl_handshake_timeout is not None and not ssl:
+            raise ValueError(
+                'ssl_handshake_timeout is only meaningful with ssl')
+    
+        if ssl_shutdown_timeout is not None and not ssl:
+            raise ValueError(
+                'ssl_shutdown_timeout is only meaningful with ssl')
+    
+        if sock is not None:
+            _check_ssl_socket(sock)
+    
+        if happy_eyeballs_delay is not None and interleave is None:
+            # If using happy eyeballs, default to interleave addresses by family
+            interleave = 1
+    
+        if host is not None or port is not None:
+            if sock is not None:
+                raise ValueError(
+                    'host/port and sock can not be specified at the same time')
+    
+            infos = await self._ensure_resolved(
+                (host, port), family=family,
+                type=socket.SOCK_STREAM, proto=proto, flags=flags, loop=self)
+            if not infos:
+                raise OSError('getaddrinfo() returned empty list')
+    
+            if local_addr is not None:
+                laddr_infos = await self._ensure_resolved(
+                    local_addr, family=family,
+                    type=socket.SOCK_STREAM, proto=proto,
+                    flags=flags, loop=self)
+                if not laddr_infos:
+                    raise OSError('getaddrinfo() returned empty list')
+            else:
+                laddr_infos = None
+    
+            if interleave:
+                infos = _interleave_addrinfos(infos, interleave)
+    
+            exceptions = []
+            if happy_eyeballs_delay is None:
+                # not using happy eyeballs
+                for addrinfo in infos:
+                    try:
+                        sock = await self._connect_sock(
+                            exceptions, addrinfo, laddr_infos)
+                        break
+                    except OSError:
+                        continue
+            else:  # using happy eyeballs
+                sock, _, _ = await staggered.staggered_race(
+                    (functools.partial(self._connect_sock,
+                                       exceptions, addrinfo, laddr_infos)
+                     for addrinfo in infos),
+                    happy_eyeballs_delay, loop=self)
+    
+            if sock is None:
+                exceptions = [exc for sub in exceptions for exc in sub]
+                try:
+                    if all_errors:
+                        raise ExceptionGroup("create_connection failed", exceptions)
+                    if len(exceptions) == 1:
+                        raise exceptions[0]
+                    else:
+                        # If they all have the same str(), raise one.
+                        model = str(exceptions[0])
+                        if all(str(exc) == model for exc in exceptions):
+                            raise exceptions[0]
+                        # Raise a combined exception so the user can see all
+                        # the various error messages.
+>                       raise OSError('Multiple exceptions: {}'.format(
+                            ', '.join(str(exc) for exc in exceptions)))
+E                           OSError: Multiple exceptions: [WinError 5] 拒绝访问。, [WinError 1225] 远程计算机拒绝网络连接。
+
+D:\Developer\Python\Lib\asyncio\base_events.py:1128: OSError
+---------------------------- Captured stdout call -----------------------------
+2026-07-08T10:23:05.663110Z [info     ] task_start                     force_refresh=False task=run_signal_scan task_id=None
+2026-07-08T10:23:08.263621Z [warning  ] strategy_table_unavailable     error=Multiple exceptions: [WinError 5] 拒绝访问。, [WinError 1225] 远程计算机拒绝网络连接。
+2026-07-08T10:23:08.263621Z [info     ] strategy_fallback_default_pool trade_mode=simulation
+2026-07-08T10:23:08.263621Z [info     ] signal_scan_start              concurrency=5 force_refresh=False stock_limit=20 strategy_count=1
+2026-07-08T10:23:10.308309Z [error    ] signal_scan_task_error         error=Multiple exceptions: [WinError 5] 拒绝访问。, [WinError 1225] 远程计算机拒绝网络连接。 task_id=None
+┌───────────────────── Traceback (most recent call last) ──────────────────────┐
+│ C:\Users\as804\Desktop\ai-quant-trader-pro-v1-GrokBuild\worker\tasks\ai.py:4 │
+│ 2 in run_signal_scan                                                         │
+│                                                                              │
+│   39 │   │   │   await service.close()                                       │
+│   40 │                                                                       │
+│   41 │   try:                                                                │
+│ > 42 │   │   result = asyncio.run(_run())                                    │
+│   43 │   │   result["status"] = "ok"                                         │
+│   44 │   │   result["task"] = "run_signal_scan"                              │
+│   45 │   │   return result                                                   │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │       asyncio = <module 'asyncio' from                                   │ │
+│ │                 'D:\\Developer\\Python\\Lib\\asyncio\\__init__.py'>      │ │
+│ │           exc = OSError('Multiple exceptions: [WinError 5] 拒绝访问。,   │ │
+│ │                 [WinError 1225] 远程计算机拒绝网络连接。')               │ │
+│ │ force_refresh = False                                                    │ │
+│ │          self = <@task: tasks.run_signal_scan of quant_trader at         │ │
+│ │                 0x24823c85640>                                           │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\asyncio\runners.py:194 in run                        │
+│                                                                              │
+│   191 │   │   │   "asyncio.run() cannot be called from a running event loop" │
+│   192 │                                                                      │
+│   193 │   with Runner(debug=debug, loop_factory=loop_factory) as runner:     │
+│ > 194 │   │   return runner.run(main)                                        │
+│   195                                                                        │
+│   196                                                                        │
+│   197 def _cancel_all_tasks(loop):                                           │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │        debug = None                                                      │ │
+│ │ loop_factory = None                                                      │ │
+│ │         main = <coroutine object run_signal_scan.<locals>._run at        │ │
+│ │                0x000002482411CBA0>                                       │ │
+│ │       runner = <asyncio.runners.Runner object at 0x0000024823E300E0>     │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\asyncio\runners.py:118 in run                        │
+│                                                                              │
+│   115 │   │                                                                  │
+│   116 │   │   self._interrupt_count = 0                                      │
+│   117 │   │   try:                                                           │
+│ > 118 │   │   │   return self._loop.run_until_complete(task)                 │
+│   119 │   │   except exceptions.CancelledError:                              │
+│   120 │   │   │   if self._interrupt_count > 0:                              │
+│   121 │   │   │   │   uncancel = getattr(task, "uncancel", None)             │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │        context = <_contextvars.Context object at 0x000002482418B240>     │ │
+│ │           coro = <coroutine object run_signal_scan.<locals>._run at      │ │
+│ │                  0x000002482411CBA0>                                     │ │
+│ │           self = <asyncio.runners.Runner object at 0x0000024823E300E0>   │ │
+│ │ sigint_handler = functools.partial(<bound method Runner._on_sigint of    │ │
+│ │                  <asyncio.runners.Runner object at 0x0000024823E300E0>>, │ │
+│ │                  main_task=<Task finished name='Task-17'                 │ │
+│ │                  coro=<run_signal_scan.<locals>._run() done, defined at  │ │
+│ │                  C:\Users\as804\Desktop\ai-quant-trader-pro-v1-GrokBuil… │ │
+│ │                  exception=OSError('Multiple exceptions: [WinError 5]    │ │
+│ │                  拒绝访问。, [WinError 1225]                             │ │
+│ │                  远程计算机拒绝网络连接。')>)                            │ │
+│ │           task = <Task finished name='Task-17'                           │ │
+│ │                  coro=<run_signal_scan.<locals>._run() done, defined at  │ │
+│ │                  C:\Users\as804\Desktop\ai-quant-trader-pro-v1-GrokBuil… │ │
+│ │                  exception=OSError('Multiple exceptions: [WinError 5]    │ │
+│ │                  拒绝访问。, [WinError 1225] 远程计算机拒绝网络连接。')> │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\asyncio\base_events.py:685 in run_until_complete     │
+│                                                                              │
+│    682 │   │   if not future.done():                                         │
+│    683 │   │   │   raise RuntimeError('Event loop stopped before Future comp │
+│    684 │   │                                                                 │
+│ >  685 │   │   return future.result()                                        │
+│    686 │                                                                     │
+│    687 │   def stop(self):                                                   │
+│    688 │   │   """Stop running the event loop.                               │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │   future = <Task finished name='Task-17'                                 │ │
+│ │            coro=<run_signal_scan.<locals>._run() done, defined at        │ │
+│ │            C:\Users\as804\Desktop\ai-quant-trader-pro-v1-GrokBuild\work… │ │
+│ │            exception=OSError('Multiple exceptions: [WinError 5]          │ │
+│ │            拒绝访问。, [WinError 1225] 远程计算机拒绝网络连接。')>       │ │
+│ │ new_task = False                                                         │ │
+│ │     self = <ProactorEventLoop running=False closed=True debug=False>     │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ C:\Users\as804\Desktop\ai-quant-trader-pro-v1-GrokBuild\worker\tasks\ai.py:3 │
+│ 7 in _run                                                                    │
+│                                                                              │
+│   34 │   async def _run() -> dict:                                           │
+│   35 │   │   service = SignalScanService()                                   │
+│   36 │   │   try:                                                            │
+│ > 37 │   │   │   return await service.scan_all(force_refresh=force_refresh)  │
+│   38 │   │   finally:                                                        │
+│   39 │   │   │   await service.close()                                       │
+│   40                                                                         │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │ force_refresh = False                                                    │ │
+│ │       service = <services.signal_scan.SignalScanService object at        │ │
+│ │                 0x0000024823E30920>                                      │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ C:\Users\as804\Desktop\ai-quant-trader-pro-v1-GrokBuild\worker\services\sign │
+│ al_scan.py:109 in scan_all                                                   │
+│                                                                              │
+│   106 │   │   for strategy in strategies:                                    │
+│   107 │   │   │   strategy_id = strategy.get("id")                           │
+│   108 │   │   │   trade_mode = strategy.get("trade_mode") or os.getenv("TRAD │
+│ > 109 │   │   │   codes = await get_strategy_stock_codes(strategy_id, limit= │
+│   110 │   │   │                                                              │
+│   111 │   │   │   for code in codes:                                         │
+│   112 │   │   │   │   tasks.append(                                          │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │ force_refresh = False                                                    │ │
+│ │          self = <services.signal_scan.SignalScanService object at        │ │
+│ │                 0x0000024823E30920>                                      │ │
+│ │     semaphore = <asyncio.locks.Semaphore object at 0x00000248242CBFE0    │ │
+│ │                 [unlocked, value:5]>                                     │ │
+│ │         start = 497766.7056376                                           │ │
+│ │         stats = {                                                        │ │
+│ │                 │   'strategies': 1,                                     │ │
+│ │                 │   'stocks_scanned': 0,                                 │ │
+│ │                 │   'signals_generated': 0,                              │ │
+│ │                 │   'signals_actionable': 0,                             │ │
+│ │                 │   'risk_blocked': 0,                                   │ │
+│ │                 │   'orders_created': 0,                                 │ │
+│ │                 │   'skipped_cached': 0,                                 │ │
+│ │                 │   'skipped_locked': 0,                                 │ │
+│ │                 │   'skipped_hold': 0,                                   │ │
+│ │                 │   'errors': 0                                          │ │
+│ │                 }                                                        │ │
+│ │    strategies = [                                                        │ │
+│ │                 │   {                                                    │ │
+│ │                 │   │   'id': 0,                                         │ │
+│ │                 │   │   'name': 'default_active_pool',                   │ │
+│ │                 │   │   'strategy_type': 'default',                      │ │
+│ │                 │   │   'trade_mode': 'simulation',                      │ │
+│ │                 │   │   'universe': 'active',                            │ │
+│ │                 │   │   'config': {}                                     │ │
+│ │                 │   }                                                    │ │
+│ │                 ]                                                        │ │
+│ │      strategy = {                                                        │ │
+│ │                 │   'id': 0,                                             │ │
+│ │                 │   'name': 'default_active_pool',                       │ │
+│ │                 │   'strategy_type': 'default',                          │ │
+│ │                 │   'trade_mode': 'simulation',                          │ │
+│ │                 │   'universe': 'active',                                │ │
+│ │                 │   'config': {}                                         │ │
+│ │                 }                                                        │ │
+│ │   strategy_id = 0                                                        │ │
+│ │         tasks = []                                                       │ │
+│ │    trade_mode = 'simulation'                                             │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ C:\Users\as804\Desktop\ai-quant-trader-pro-v1-GrokBuild\worker\services\stra │
+│ tegy_pool.py:70 in get_strategy_stock_codes                                  │
+│                                                                              │
+│    67 ) -> list[str]:                                                        │
+│    68 │   """获取策略关注股票池；无关注池时回退全市场活跃股。"""             │
+│    69 │   if not strategy_id:                                                │
+│ >  70 │   │   return await get_active_stock_codes(limit=limit)               │
+│    71 │                                                                      │
+│    72 │   factory = _get_session_factory()                                   │
+│    73 │   try:                                                               │
+│                                                                              │
+│ ┌───── locals ─────┐                                                         │
+│ │       limit = 20 │                                                         │
+│ │ strategy_id = 0  │                                                         │
+│ └──────────────────┘                                                         │
+│                                                                              │
+│ C:\Users\as804\Desktop\ai-quant-trader-pro-v1-GrokBuild\worker\services\stoc │
+│ k_pool.py:28 in get_active_stock_codes                                       │
+│                                                                              │
+│   25 │   """从 fundamental.stocks 获取活跃股票池。"""                        │
+│   26 │   factory = _get_session_factory()                                    │
+│   27 │   async with factory() as session:                                    │
+│ > 28 │   │   result = await session.execute(                                 │
+│   29 │   │   │   text(                                                       │
+│   30 │   │   │   │   """                                                     │
+│   31 │   │   │   │   SELECT code FROM fundamental.stocks                     │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │ factory = async_sessionmaker(class_='AsyncSession',                      │ │
+│ │           bind=<sqlalchemy.ext.asyncio.engine.AsyncEngine object at      │ │
+│ │           0x00000248243B2C10>, autoflush=True, expire_on_commit=False)   │ │
+│ │   limit = 20                                                             │ │
+│ │ session = <sqlalchemy.ext.asyncio.session.AsyncSession object at         │ │
+│ │           0x00000248243CC470>                                            │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\ext\asyncio\session.py:455  │
+│ in execute                                                                   │
+│                                                                              │
+│    452 │   │   else:                                                         │
+│    453 │   │   │   execution_options = _EXECUTE_OPTIONS                      │
+│    454 │   │                                                                 │
+│ >  455 │   │   result = await greenlet_spawn(                                │
+│    456 │   │   │   self.sync_session.execute,                                │
+│    457 │   │   │   statement,                                                │
+│    458 │   │   │   params=params,                                            │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │    bind_arguments = None                                                 │ │
+│ │ execution_options = immutabledict({'prebuffer_rows': True})              │ │
+│ │                kw = {}                                                   │ │
+│ │            params = {'limit': 20}                                        │ │
+│ │              self = <sqlalchemy.ext.asyncio.session.AsyncSession object  │ │
+│ │                     at 0x00000248243CC470>                               │ │
+│ │         statement = <sqlalchemy.sql.elements.TextClause object at        │ │
+│ │                     0x00000248243CCF80>                                  │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\util\_concurrency_py3k.py:2 │
+│ 00 in greenlet_spawn                                                         │
+│                                                                              │
+│   197 │   │   │   │   # this allows an exception to be raised within         │
+│   198 │   │   │   │   # the moderated greenlet so that it can continue       │
+│   199 │   │   │   │   # its expected flow.                                   │
+│ > 200 │   │   │   │   result = context.throw(*sys.exc_info())                │
+│   201 │   │   │   else:                                                      │
+│   202 │   │   │   │   result = context.switch(value)                         │
+│   203 │   finally:                                                           │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │  _require_await = False                                                  │ │
+│ │            args = (                                                      │ │
+│ │                   │   <sqlalchemy.sql.elements.TextClause object at      │ │
+│ │                   0x00000248243CCF80>,                                   │ │
+│ │                   )                                                      │ │
+│ │         context = <_AsyncIoGreenlet object at 0x00000248243B0180         │ │
+│ │                   (otid=0x00000248211AEC80) dead>                        │ │
+│ │              fn = <bound method Session.execute of                       │ │
+│ │                   <sqlalchemy.orm.session.Session object at              │ │
+│ │                   0x00000248243CCCB0>>                                   │ │
+│ │          kwargs = {                                                      │ │
+│ │                   │   'params': {'limit': 20},                           │ │
+│ │                   │   'execution_options':                               │ │
+│ │                   immutabledict({'prebuffer_rows': True}),               │ │
+│ │                   │   'bind_arguments': None                             │ │
+│ │                   }                                                      │ │
+│ │          result = <coroutine object connect at 0x00000248243B4320>       │ │
+│ │ switch_occurred = True                                                   │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\orm\session.py:2308 in      │
+│ execute                                                                      │
+│                                                                              │
+│   2305 │   │                                                                 │
+│   2306 │   │                                                                 │
+│   2307 │   │   """                                                           │
+│ > 2308 │   │   return self._execute_internal(                                │
+│   2309 │   │   │   statement,                                                │
+│   2310 │   │   │   params,                                                   │
+│   2311 │   │   │   execution_options=execution_options,                      │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │            _add_event = None                                             │ │
+│ │ _parent_execute_state = None                                             │ │
+│ │        bind_arguments = None                                             │ │
+│ │     execution_options = immutabledict({'prebuffer_rows': True})          │ │
+│ │                params = {'limit': 20}                                    │ │
+│ │                  self = <sqlalchemy.orm.session.Session object at        │ │
+│ │                         0x00000248243CCCB0>                              │ │
+│ │             statement = <sqlalchemy.sql.elements.TextClause object at    │ │
+│ │                         0x00000248243CCF80>                              │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\orm\session.py:2180 in      │
+│ _execute_internal                                                            │
+│                                                                              │
+│   2177 │   │                                                                 │
+│   2178 │   │   bind = self.get_bind(**bind_arguments)                        │
+│   2179 │   │                                                                 │
+│ > 2180 │   │   conn = self._connection_for_bind(bind)                        │
+│   2181 │   │                                                                 │
+│   2182 │   │   if _scalar_result and not compile_state_cls:                  │
+│   2183 │   │   │   if TYPE_CHECKING:                                         │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │            _add_event = None                                             │ │
+│ │ _parent_execute_state = None                                             │ │
+│ │        _scalar_result = False                                            │ │
+│ │                  bind = Engine(postgresql+asyncpg://quant_admin:***@loc… │ │
+│ │        bind_arguments = {                                                │ │
+│ │                         │   'clause':                                    │ │
+│ │                         <sqlalchemy.sql.elements.TextClause object at    │ │
+│ │                         0x00000248243CCF80>                              │ │
+│ │                         }                                                │ │
+│ │     compile_state_cls = None                                             │ │
+│ │           events_todo = <sqlalchemy.event.attr._EmptyListener object at  │ │
+│ │                         0x000002482437EB00>                              │ │
+│ │     execution_options = immutabledict({'prebuffer_rows': True})          │ │
+│ │                params = {'limit': 20}                                    │ │
+│ │                  self = <sqlalchemy.orm.session.Session object at        │ │
+│ │                         0x00000248243CCCB0>                              │ │
+│ │             statement = <sqlalchemy.sql.elements.TextClause object at    │ │
+│ │                         0x00000248243CCF80>                              │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\orm\session.py:2047 in      │
+│ _connection_for_bind                                                         │
+│                                                                              │
+│   2044 │   │   trans = self._transaction                                     │
+│   2045 │   │   if trans is None:                                             │
+│   2046 │   │   │   trans = self._autobegin_t()                               │
+│ > 2047 │   │   return trans._connection_for_bind(engine, execution_options)  │
+│   2048 │                                                                     │
+│   2049 │   @overload                                                         │
+│   2050 │   def _execute_internal(                                            │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │            engine = Engine(postgresql+asyncpg://quant_admin:***@localho… │ │
+│ │ execution_options = None                                                 │ │
+│ │                kw = {}                                                   │ │
+│ │              self = <sqlalchemy.orm.session.Session object at            │ │
+│ │                     0x00000248243CCCB0>                                  │ │
+│ │             trans = <sqlalchemy.orm.session.SessionTransaction object at │ │
+│ │                     0x00000248243B0210>                                  │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│ in _connection_for_bind:2                                                    │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │              bind = Engine(postgresql+asyncpg://quant_admin:***@localho… │ │
+│ │ execution_options = None                                                 │ │
+│ │              self = <sqlalchemy.orm.session.SessionTransaction object at │ │
+│ │                     0x00000248243B0210>                                  │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\orm\state_changes.py:139 in │
+│ _go                                                                          │
+│                                                                              │
+│   136 │   │   │   self._current_fn = fn                                      │
+│   137 │   │   │   self._next_state = _StateChangeStates.CHANGE_IN_PROGRESS   │
+│   138 │   │   │   try:                                                       │
+│ > 139 │   │   │   │   ret_value = fn(self, *arg, **kw)                       │
+│   140 │   │   │   except:                                                    │
+│   141 │   │   │   │   raise                                                  │
+│   142 │   │   │   else:                                                      │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │                           arg = (                                        │ │
+│ │                                 │                                        │ │
+│ │                                 Engine(postgresql+asyncpg://quant_admin… │ │
+│ │                                 │   None                                 │ │
+│ │                                 )                                        │ │
+│ │                 current_state = <SessionTransactionState.ACTIVE: 1>      │ │
+│ │                   existing_fn = None                                     │ │
+│ │                  expect_state = <SessionTransactionState.ACTIVE: 1>      │ │
+│ │           expect_state_change = False                                    │ │
+│ │       has_prerequisite_states = True                                     │ │
+│ │                            kw = {}                                       │ │
+│ │                      moves_to = <_StateChangeStates.NO_CHANGE: 2>        │ │
+│ │                    next_state = <_StateChangeStates.ANY: 1>              │ │
+│ │ prerequisite_state_collection = (<SessionTransactionState.ACTIVE: 1>,)   │ │
+│ │                          self = <sqlalchemy.orm.session.SessionTransact… │ │
+│ │                                 object at 0x00000248243B0210>            │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\orm\session.py:1143 in      │
+│ _connection_for_bind                                                         │
+│                                                                              │
+│   1140 │   │   │   │   │   │   │   "for the given Connection's Engine"       │
+│   1141 │   │   │   │   │   │   )                                             │
+│   1142 │   │   │   │   else:                                                 │
+│ > 1143 │   │   │   │   │   conn = bind.connect()                             │
+│   1144 │   │   │   │   │   local_connect = True                              │
+│   1145 │   │   │                                                             │
+│   1146 │   │   │   try:                                                      │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │              bind = Engine(postgresql+asyncpg://quant_admin:***@localho… │ │
+│ │ execution_options = None                                                 │ │
+│ │     local_connect = False                                                │ │
+│ │              self = <sqlalchemy.orm.session.SessionTransaction object at │ │
+│ │                     0x00000248243B0210>                                  │ │
+│ │     should_commit = True                                                 │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\engine\base.py:3269 in      │
+│ connect                                                                      │
+│                                                                              │
+│   3266 │   │                                                                 │
+│   3267 │   │   """                                                           │
+│   3268 │   │                                                                 │
+│ > 3269 │   │   return self._connection_cls(self)                             │
+│   3270 │                                                                     │
+│   3271 │   def raw_connection(self) -> PoolProxiedConnection:                │
+│   3272 │   │   """Return a "raw" DBAPI connection from the connection pool.  │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │ self = Engine(postgresql+asyncpg://quant_admin:***@localhost:5432/quant… │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\engine\base.py:145 in       │
+│ __init__                                                                     │
+│                                                                              │
+│    142 │   │                                                                 │
+│    143 │   │   if connection is None:                                        │
+│    144 │   │   │   try:                                                      │
+│ >  145 │   │   │   │   self._dbapi_connection = engine.raw_connection()      │
+│    146 │   │   │   except dialect.loaded_dbapi.Error as err:                 │
+│    147 │   │   │   │   Connection._handle_dbapi_exception_noconnection(      │
+│    148 │   │   │   │   │   err, dialect, engine                              │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │  _allow_autobegin = True                                                 │ │
+│ │ _allow_revalidate = True                                                 │ │
+│ │       _has_events = None                                                 │ │
+│ │        connection = None                                                 │ │
+│ │           dialect = <sqlalchemy.dialects.postgresql.asyncpg.PGDialect_a… │ │
+│ │                     object at 0x00000248243CD130>                        │ │
+│ │            engine = Engine(postgresql+asyncpg://quant_admin:***@localho… │ │
+│ │              self = <sqlalchemy.engine.base.Connection object at         │ │
+│ │                     0x00000248243CD5B0>                                  │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\engine\base.py:3293 in      │
+│ raw_connection                                                               │
+│                                                                              │
+│   3290 │   │   │   :ref:`dbapi_connections`                                  │
+│   3291 │   │                                                                 │
+│   3292 │   │   """                                                           │
+│ > 3293 │   │   return self.pool.connect()                                    │
+│   3294                                                                       │
+│   3295                                                                       │
+│   3296 class OptionEngineMixin(log.Identified):                              │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │ self = Engine(postgresql+asyncpg://quant_admin:***@localhost:5432/quant… │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\pool\base.py:452 in connect │
+│                                                                              │
+│    449 │   │   the pool.                                                     │
+│    450 │   │                                                                 │
+│    451 │   │   """                                                           │
+│ >  452 │   │   return _ConnectionFairy._checkout(self)                       │
+│    453 │                                                                     │
+│    454 │   def _return_conn(self, record: ConnectionPoolEntry) -> None:      │
+│    455 │   │   """Given a _ConnectionRecord, return it to the :class:`_pool. │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │ self = <sqlalchemy.pool.impl.AsyncAdaptedQueuePool object at             │ │
+│ │        0x00000248243CD1F0>                                               │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\pool\base.py:1269 in        │
+│ _checkout                                                                    │
+│                                                                              │
+│   1266 │   │   fairy: Optional[_ConnectionFairy] = None,                     │
+│   1267 │   ) -> _ConnectionFairy:                                            │
+│   1268 │   │   if not fairy:                                                 │
+│ > 1269 │   │   │   fairy = _ConnectionRecord.checkout(pool)                  │
+│   1270 │   │   │                                                             │
+│   1271 │   │   │   if threadconns is not None:                               │
+│   1272 │   │   │   │   threadconns.current = weakref.ref(fairy)              │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │       fairy = None                                                       │ │
+│ │        pool = <sqlalchemy.pool.impl.AsyncAdaptedQueuePool object at      │ │
+│ │               0x00000248243CD1F0>                                        │ │
+│ │ threadconns = None                                                       │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\pool\base.py:716 in         │
+│ checkout                                                                     │
+│                                                                              │
+│    713 │   │   if TYPE_CHECKING:                                             │
+│    714 │   │   │   rec = cast(_ConnectionRecord, pool._do_get())             │
+│    715 │   │   else:                                                         │
+│ >  716 │   │   │   rec = pool._do_get()                                      │
+│    717 │   │                                                                 │
+│    718 │   │   try:                                                          │
+│    719 │   │   │   dbapi_connection = rec.get_connection()                   │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │ pool = <sqlalchemy.pool.impl.AsyncAdaptedQueuePool object at             │ │
+│ │        0x00000248243CD1F0>                                               │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\pool\impl.py:169 in _do_get │
+│                                                                              │
+│   166 │   │   │   try:                                                       │
+│   167 │   │   │   │   return self._create_connection()                       │
+│   168 │   │   │   except:                                                    │
+│ > 169 │   │   │   │   with util.safe_reraise():                              │
+│   170 │   │   │   │   │   self._dec_overflow()                               │
+│   171 │   │   │   │   raise                                                  │
+│   172 │   │   else:                                                          │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │         self = <sqlalchemy.pool.impl.AsyncAdaptedQueuePool object at     │ │
+│ │                0x00000248243CD1F0>                                       │ │
+│ │ use_overflow = True                                                      │ │
+│ │         wait = False                                                     │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\util\langhelpers.py:146 in  │
+│ __exit__                                                                     │
+│                                                                              │
+│    143 │   │   │   exc_type, exc_value, exc_tb = self._exc_info              │
+│    144 │   │   │   assert exc_value is not None                              │
+│    145 │   │   │   self._exc_info = None  # remove potential circular refere │
+│ >  146 │   │   │   raise exc_value.with_traceback(exc_tb)                    │
+│    147 │   │   else:                                                         │
+│    148 │   │   │   self._exc_info = None  # remove potential circular refere │
+│    149 │   │   │   assert value is not None                                  │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │    exc_tb = <traceback object at 0x00000248243B3D40>                     │ │
+│ │ exc_value = OSError('Multiple exceptions: [WinError 5] 拒绝访问。,       │ │
+│ │             [WinError 1225] 远程计算机拒绝网络连接。')                   │ │
+│ │      self = <sqlalchemy.util.langhelpers.safe_reraise object at          │ │
+│ │             0x00000248243CD720>                                          │ │
+│ │ traceback = None                                                         │ │
+│ │     type_ = None                                                         │ │
+│ │     value = None                                                         │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\pool\impl.py:167 in _do_get │
+│                                                                              │
+│   164 │   │                                                                  │
+│   165 │   │   if self._inc_overflow():                                       │
+│   166 │   │   │   try:                                                       │
+│ > 167 │   │   │   │   return self._create_connection()                       │
+│   168 │   │   │   except:                                                    │
+│   169 │   │   │   │   with util.safe_reraise():                              │
+│   170 │   │   │   │   │   self._dec_overflow()                               │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │         self = <sqlalchemy.pool.impl.AsyncAdaptedQueuePool object at     │ │
+│ │                0x00000248243CD1F0>                                       │ │
+│ │ use_overflow = True                                                      │ │
+│ │         wait = False                                                     │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\pool\base.py:393 in         │
+│ _create_connection                                                           │
+│                                                                              │
+│    390 │   def _create_connection(self) -> ConnectionPoolEntry:              │
+│    391 │   │   """Called by subclasses to create a new ConnectionRecord."""  │
+│    392 │   │                                                                 │
+│ >  393 │   │   return _ConnectionRecord(self)                                │
+│    394 │                                                                     │
+│    395 │   def _invalidate(                                                  │
+│    396 │   │   self,                                                         │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │ self = <sqlalchemy.pool.impl.AsyncAdaptedQueuePool object at             │ │
+│ │        0x00000248243CD1F0>                                               │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\pool\base.py:678 in         │
+│ __init__                                                                     │
+│                                                                              │
+│    675 │   │                                                                 │
+│    676 │   │   self.__pool = pool                                            │
+│    677 │   │   if connect:                                                   │
+│ >  678 │   │   │   self.__connect()                                          │
+│    679 │   │   self.finalize_callback = deque()                              │
+│    680 │                                                                     │
+│    681 │   dbapi_connection: Optional[DBAPIConnection]                       │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │ connect = True                                                           │ │
+│ │    pool = <sqlalchemy.pool.impl.AsyncAdaptedQueuePool object at          │ │
+│ │           0x00000248243CD1F0>                                            │ │
+│ │    self = <sqlalchemy.pool.base._ConnectionRecord object at              │ │
+│ │           0x0000024824367650>                                            │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\pool\base.py:902 in         │
+│ __connect                                                                    │
+│                                                                              │
+│    899 │   │   │   pool.logger.debug("Created new connection %r", connection │
+│    900 │   │   │   self.fresh = True                                         │
+│    901 │   │   except BaseException as e:                                    │
+│ >  902 │   │   │   with util.safe_reraise():                                 │
+│    903 │   │   │   │   sys:1: RuntimeWarning: coroutine 'sync_realtime_quotes.<locals>._run' was never awaited
+RuntimeWarning: Enable tracemalloc to get the object allocation traceback
+pool.logger.debug("Error on connect(): %s", e)        │
+│    904 │   │   else:                                                         │
+│    905 │   │   │   # in SQLAlchemy 1.4 the first_connect event is not used b │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │ pool = <sqlalchemy.pool.impl.AsyncAdaptedQueuePool object at             │ │
+│ │        0x00000248243CD1F0>                                               │ │
+│ │ self = <sqlalchemy.pool.base._ConnectionRecord object at                 │ │
+│ │        0x0000024824367650>                                               │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\util\langhelpers.py:146 in  │
+│ __exit__                                                                     │
+│                                                                              │
+│    143 │   │   │   exc_type, exc_value, exc_tb = self._exc_info              │
+│    144 │   │   │   assert exc_value is not None                              │
+│    145 │   │   │   self._exc_info = None  # remove potential circular refere │
+│ >  146 │   │   │   raise exc_value.with_traceback(exc_tb)                    │
+│    147 │   │   else:                                                         │
+│    148 │   │   │   self._exc_info = None  # remove potential circular refere │
+│    149 │   │   │   assert value is not None                                  │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │    exc_tb = <traceback object at 0x00000248243B3C00>                     │ │
+│ │ exc_value = OSError('Multiple exceptions: [WinError 5] 拒绝访问。,       │ │
+│ │             [WinError 1225] 远程计算机拒绝网络连接。')                   │ │
+│ │      self = <sqlalchemy.util.langhelpers.safe_reraise object at          │ │
+│ │             0x00000248243CD6F0>                                          │ │
+│ │ traceback = None                                                         │ │
+│ │     type_ = None                                                         │ │
+│ │     value = None                                                         │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\pool\base.py:898 in         │
+│ __connect                                                                    │
+│                                                                              │
+│    895 │   │   self.dbapi_connection = None                                  │
+│    896 │   │   try:                                                          │
+│    897 │   │   │   self.starttime = time.time()                              │
+│ >  898 │   │   │   self.dbapi_connection = connection = pool._invoke_creator │
+│    899 │   │   │   pool.logger.debug("Created new connection %r", connection │
+│    900 │   │   │   self.fresh = True                                         │
+│    901 │   │   except BaseException as e:                                    │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │ pool = <sqlalchemy.pool.impl.AsyncAdaptedQueuePool object at             │ │
+│ │        0x00000248243CD1F0>                                               │ │
+│ │ self = <sqlalchemy.pool.base._ConnectionRecord object at                 │ │
+│ │        0x0000024824367650>                                               │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\engine\create.py:645 in     │
+│ connect                                                                      │
+│                                                                              │
+│   642 │   │   │   │   │   if connection is not None:                         │
+│   643 │   │   │   │   │   │   return connection                              │
+│   644 │   │   │                                                              │
+│ > 645 │   │   │   return dialect.connect(*cargs, **cparams)                  │
+│   646 │   │                                                                  │
+│   647 │   │   creator = pop_kwarg("creator", connect)                        │
+│   648                                                                        │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │             cargs = []                                                   │ │
+│ │ connection_record = <sqlalchemy.pool.base._ConnectionRecord object at    │ │
+│ │                     0x0000024824367650>                                  │ │
+│ │           cparams = {                                                    │ │
+│ │                     │   'host': 'localhost',                             │ │
+│ │                     │   'database': 'quant_trader',                      │ │
+│ │                     │   'user': 'quant_admin',                           │ │
+│ │                     │   'password': 'pass',                              │ │
+│ │                     │   'port': 5432                                     │ │
+│ │                     }                                                    │ │
+│ │           dialect = <sqlalchemy.dialects.postgresql.asyncpg.PGDialect_a… │ │
+│ │                     object at 0x00000248243CD130>                        │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\engine\default.py:616 in    │
+│ connect                                                                      │
+│                                                                              │
+│    613 │                                                                     │
+│    614 │   def connect(self, *cargs, **cparams):                             │
+│    615 │   │   # inherits the docstring from interfaces.Dialect.connect      │
+│ >  616 │   │   return self.loaded_dbapi.connect(*cargs, **cparams)           │
+│    617 │                                                                     │
+│    618 │   def create_connect_args(self, url):                               │
+│    619 │   │   # inherits the docstring from interfaces.Dialect.create_conne │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │   cargs = ()                                                             │ │
+│ │ cparams = {                                                              │ │
+│ │           │   'host': 'localhost',                                       │ │
+│ │           │   'database': 'quant_trader',                                │ │
+│ │           │   'user': 'quant_admin',                                     │ │
+│ │           │   'password': 'pass',                                        │ │
+│ │           │   'port': 5432                                               │ │
+│ │           }                                                              │ │
+│ │    self = <sqlalchemy.dialects.postgresql.asyncpg.PGDialect_asyncpg      │ │
+│ │           object at 0x00000248243CD130>                                  │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg │
+│ .py:941 in connect                                                           │
+│                                                                              │
+│    938 │   │   else:                                                         │
+│    939 │   │   │   return AsyncAdapt_asyncpg_connection(                     │
+│    940 │   │   │   │   self,                                                 │
+│ >  941 │   │   │   │   await_only(creator_fn(*arg, **kw)),                   │
+│    942 │   │   │   │   prepared_statement_cache_size=prepared_statement_cach │
+│    943 │   │   │   │   prepared_statement_name_func=prepared_statement_name_ │
+│    944 │   │   │   )                                                         │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │                           arg = ()                                       │ │
+│ │                async_fallback = False                                    │ │
+│ │                            kw = {                                        │ │
+│ │                                 │   'host': 'localhost',                 │ │
+│ │                                 │   'database': 'quant_trader',          │ │
+│ │                                 │   'user': 'quant_admin',               │ │
+│ │                                 │   'password': 'pass',                  │ │
+│ │                                 │   'port': 5432                         │ │
+│ │                                 }                                        │ │
+│ │ prepared_statement_cache_size = 100                                      │ │
+│ │  prepared_statement_name_func = None                                     │ │
+│ │                          self = <sqlalchemy.dialects.postgresql.asyncpg… │ │
+│ │                                 object at 0x00000248243CD100>            │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\util\_concurrency_py3k.py:1 │
+│ 30 in await_only                                                             │
+│                                                                              │
+│   127 │   # a coroutine to run. Once the awaitable is done, the driver green │
+│   128 │   # switches back to this greenlet with the result of awaitable that │
+│   129 │   # then returned to the caller (or raised as error)                 │
+│ > 130 │   return current.driver.switch(awaitable)  # type: ignore[no-any-ret │
+│   131                                                                        │
+│   132                                                                        │
+│   133 def await_fallback(awaitable: Awaitable[_T]) -> _T:                    │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │ awaitable = <coroutine object connect at 0x00000248243B4320>             │ │
+│ │   current = <_AsyncIoGreenlet object at 0x00000248243B0180               │ │
+│ │             (otid=0x00000248211AEC80) dead>                              │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\sqlalchemy\util\_concurrency_py3k.py:1 │
+│ 95 in greenlet_spawn                                                         │
+│                                                                              │
+│   192 │   │   │   try:                                                       │
+│   193 │   │   │   │   # wait for a coroutine from await_only and then return │
+│   194 │   │   │   │   # result back to it.                                   │
+│ > 195 │   │   │   │   value = await result                                   │
+│   196 │   │   │   except BaseException:                                      │
+│   197 │   │   │   │   # this allows an exception to be raised within         │
+│   198 │   │   │   │   # the moderated greenlet so that it can continue       │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │  _require_await = False                                                  │ │
+│ │            args = (                                                      │ │
+│ │                   │   <sqlalchemy.sql.elements.TextClause object at      │ │
+│ │                   0x00000248243CCF80>,                                   │ │
+│ │                   )                                                      │ │
+│ │         context = <_AsyncIoGreenlet object at 0x00000248243B0180         │ │
+│ │                   (otid=0x00000248211AEC80) dead>                        │ │
+│ │              fn = <bound method Session.execute of                       │ │
+│ │                   <sqlalchemy.orm.session.Session object at              │ │
+│ │                   0x00000248243CCCB0>>                                   │ │
+│ │          kwargs = {                                                      │ │
+│ │                   │   'params': {'limit': 20},                           │ │
+│ │                   │   'execution_options':                               │ │
+│ │                   immutabledict({'prebuffer_rows': True}),               │ │
+│ │                   │   'bind_arguments': None                             │ │
+│ │                   }                                                      │ │
+│ │          result = <coroutine object connect at 0x00000248243B4320>       │ │
+│ │ switch_occurred = True                                                   │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\asyncpg\connection.py:2329 in connect  │
+│                                                                              │
+│   2326 │   │   loop = asyncio.get_event_loop()                               │
+│   2327 │                                                                     │
+│   2328 │   async with compat.timeout(timeout):                               │
+│ > 2329 │   │   return await connect_utils._connect(                          │
+│   2330 │   │   │   loop=loop,                                                │
+│   2331 │   │   │   connection_class=connection_class,                        │
+│   2332 │   │   │   record_class=record_class,                                │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │               command_timeout = None                                     │ │
+│ │                      database = 'quant_trader'                           │ │
+│ │                    direct_tls = False                                    │ │
+│ │                           dsn = None                                     │ │
+│ │                          host = 'localhost'                              │ │
+│ │                          loop = <ProactorEventLoop running=False         │ │
+│ │                                 closed=True debug=False>                 │ │
+│ │  max_cacheable_statement_size = 15360                                    │ │
+│ │ max_cached_statement_lifetime = 300                                      │ │
+│ │                      passfile = None                                     │ │
+│ │                      password = 'pass'                                   │ │
+│ │                          port = 5432                                     │ │
+│ │               server_settings = None                                     │ │
+│ │                           ssl = None                                     │ │
+│ │          statement_cache_size = 100                                      │ │
+│ │          target_session_attrs = None                                     │ │
+│ │                       timeout = 60                                       │ │
+│ │                          user = 'quant_admin'                            │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\asyncpg\connect_utils.py:1017 in       │
+│ _connect                                                                     │
+│                                                                              │
+│   1014 │   if chosen_connection:                                             │
+│   1015 │   │   return chosen_connection                                      │
+│   1016 │                                                                     │
+│ > 1017 │   raise last_error or exceptions.TargetServerAttributeNotMatched(   │
+│   1018 │   │   'None of the hosts match the target attribute requirement '   │
+│   1019 │   │   '{!r}'.format(target_attr)                                    │
+│   1020 │   )                                                                 │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │              addr = ('localhost', 5432)                                  │ │
+│ │             addrs = [('localhost', 5432)]                                │ │
+│ │        candidates = []                                                   │ │
+│ │ chosen_connection = None                                                 │ │
+│ │            config = ConnectionConfiguration(                             │ │
+│ │                     │   command_timeout=None,                            │ │
+│ │                     │   statement_cache_size=100,                        │ │
+│ │                     │   max_cached_statement_lifetime=300,               │ │
+│ │                     │   max_cacheable_statement_size=15360               │ │
+│ │                     )                                                    │ │
+│ │            kwargs = {                                                    │ │
+│ │                     │   'dsn': None,                                     │ │
+│ │                     │   'host': 'localhost',                             │ │
+│ │                     │   'port': 5432,                                    │ │
+│ │                     │   'user': 'quant_admin',                           │ │
+│ │                     │   'password': 'pass',                              │ │
+│ │                     │   'passfile': None,                                │ │
+│ │                     │   'ssl': None,                                     │ │
+│ │                     │   'direct_tls': False,                             │ │
+│ │                     │   'database': 'quant_trader',                      │ │
+│ │                     │   'server_settings': None,                         │ │
+│ │                     │   ... +5                                           │ │
+│ │                     }                                                    │ │
+│ │        last_error = OSError('Multiple exceptions: [WinError 5]           │ │
+│ │                     拒绝访问。, [WinError 1225]                          │ │
+│ │                     远程计算机拒绝网络连接。')                           │ │
+│ │              loop = <ProactorEventLoop running=False closed=True         │ │
+│ │                     debug=False>                                         │ │
+│ │            params = ConnectionParameters(                                │ │
+│ │                     │   user='quant_admin',                              │ │
+│ │                     │   password='pass',                                 │ │
+│ │                     │   database='quant_trader',                         │ │
+│ │                     │   ssl=<ssl.SSLContext object at                    │ │
+│ │                     0x00000248243978D0>,                                 │ │
+│ │                     │   sslmode=<SSLMode.prefer: 2>,                     │ │
+│ │                     │   direct_tls=False,                                │ │
+│ │                     │   server_settings=None,                            │ │
+│ │                     │   target_session_attrs=<SessionAttribute.any:      │ │
+│ │                     'any'>                                               │ │
+│ │                     )                                                    │ │
+│ │       target_attr = <SessionAttribute.any: 'any'>                        │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\asyncpg\connect_utils.py:991 in        │
+│ _connect                                                                     │
+│                                                                              │
+│    988 │   last_error = None                                                 │
+│    989 │   for addr in addrs:                                                │
+│    990 │   │   try:                                                          │
+│ >  991 │   │   │   conn = await _connect_addr(                               │
+│    992 │   │   │   │   addr=addr,                                            │
+│    993 │   │   │   │   loop=loop,                                            │
+│    994 │   │   │   │   params=params,                                        │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │              addr = ('localhost', 5432)                                  │ │
+│ │             addrs = [('localhost', 5432)]                                │ │
+│ │        candidates = []                                                   │ │
+│ │ chosen_connection = None                                                 │ │
+│ │            config = ConnectionConfiguration(                             │ │
+│ │                     │   command_timeout=None,                            │ │
+│ │                     │   statement_cache_size=100,                        │ │
+│ │                     │   max_cached_statement_lifetime=300,               │ │
+│ │                     │   max_cacheable_statement_size=15360               │ │
+│ │                     )                                                    │ │
+│ │            kwargs = {                                                    │ │
+│ │                     │   'dsn': None,                                     │ │
+│ │                     │   'host': 'localhost',                             │ │
+│ │                     │   'port': 5432,                                    │ │
+│ │                     │   'user': 'quant_admin',                           │ │
+│ │                     │   'password': 'pass',                              │ │
+│ │                     │   'passfile': None,                                │ │
+│ │                     │   'ssl': None,                                     │ │
+│ │                     │   'direct_tls': False,                             │ │
+│ │                     │   'database': 'quant_trader',                      │ │
+│ │                     │   'server_settings': None,                         │ │
+│ │                     │   ... +5                                           │ │
+│ │                     }                                                    │ │
+│ │        last_error = OSError('Multiple exceptions: [WinError 5]           │ │
+│ │                     拒绝访问。, [WinError 1225]                          │ │
+│ │                     远程计算机拒绝网络连接。')                           │ │
+│ │              loop = <ProactorEventLoop running=False closed=True         │ │
+│ │                     debug=False>                                         │ │
+│ │            params = ConnectionParameters(                                │ │
+│ │                     │   user='quant_admin',                              │ │
+│ │                     │   password='pass',                                 │ │
+│ │                     │   database='quant_trader',                         │ │
+│ │                     │   ssl=<ssl.SSLContext object at                    │ │
+│ │                     0x00000248243978D0>,                                 │ │
+│ │                     │   sslmode=<SSLMode.prefer: 2>,                     │ │
+│ │                     │   direct_tls=False,                                │ │
+│ │                     │   server_settings=None,                            │ │
+│ │                     │   target_session_attrs=<SessionAttribute.any:      │ │
+│ │                     'any'>                                               │ │
+│ │                     )                                                    │ │
+│ │       target_attr = <SessionAttribute.any: 'any'>                        │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\asyncpg\connect_utils.py:828 in        │
+│ _connect_addr                                                                │
+│                                                                              │
+│    825 │                                                                     │
+│    826 │   # first attempt                                                   │
+│    827 │   try:                                                              │
+│ >  828 │   │   return await __connect_addr(params, True, *args)              │
+│    829 │   except _RetryConnectSignal:                                       │
+│    830 │   │   pass                                                          │
+│    831                                                                       │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │         addr = ('localhost', 5432)                                       │ │
+│ │         args = (                                                         │ │
+│ │                │   ('localhost', 5432),                                  │ │
+│ │                │   <ProactorEventLoop running=False closed=True          │ │
+│ │                debug=False>,                                             │ │
+│ │                │   ConnectionConfiguration(                              │ │
+│ │                │   │   command_timeout=None,                             │ │
+│ │                │   │   statement_cache_size=100,                         │ │
+│ │                │   │   max_cached_statement_lifetime=300,                │ │
+│ │                │   │   max_cacheable_statement_size=15360                │ │
+│ │                │   ),                                                    │ │
+│ │                │   <class 'asyncpg.connection.Connection'>,              │ │
+│ │                │   <class 'asyncpg.Record'>,                             │ │
+│ │                │   ConnectionParameters(                                 │ │
+│ │                │   │   user='quant_admin',                               │ │
+│ │                │   │   password='pass',                                  │ │
+│ │                │   │   database='quant_trader',                          │ │
+│ │                │   │   ssl=<ssl.SSLContext object at                     │ │
+│ │                0x00000248243978D0>,                                      │ │
+│ │                │   │   sslmode=<SSLMode.prefer: 2>,                      │ │
+│ │                │   │   direct_tls=False,                                 │ │
+│ │                │   │   server_settings=None,                             │ │
+│ │                │   │   target_session_attrs=<SessionAttribute.any:       │ │
+│ │                'any'>                                                    │ │
+│ │                │   )                                                     │ │
+│ │                )                                                         │ │
+│ │       config = ConnectionConfiguration(                                  │ │
+│ │                │   command_timeout=None,                                 │ │
+│ │                │   statement_cache_size=100,                             │ │
+│ │                │   max_cached_statement_lifetime=300,                    │ │
+│ │                │   max_cacheable_statement_size=15360                    │ │
+│ │                )                                                         │ │
+│ │         loop = <ProactorEventLoop running=False closed=True debug=False> │ │
+│ │       params = ConnectionParameters(                                     │ │
+│ │                │   user='quant_admin',                                   │ │
+│ │                │   password='pass',                                      │ │
+│ │                │   database='quant_trader',                              │ │
+│ │                │   ssl=<ssl.SSLContext object at 0x00000248243978D0>,    │ │
+│ │                │   sslmode=<SSLMode.prefer: 2>,                          │ │
+│ │                │   direct_tls=False,                                     │ │
+│ │                │   server_settings=None,                                 │ │
+│ │                │   target_session_attrs=<SessionAttribute.any: 'any'>    │ │
+│ │                )                                                         │ │
+│ │ params_input = ConnectionParameters(                                     │ │
+│ │                │   user='quant_admin',                                   │ │
+│ │                │   password='pass',                                      │ │
+│ │                │   database='quant_trader',                              │ │
+│ │                │   ssl=<ssl.SSLContext object at 0x00000248243978D0>,    │ │
+│ │                │   sslmode=<SSLMode.prefer: 2>,                          │ │
+│ │                │   direct_tls=False,                                     │ │
+│ │                │   server_settings=None,                                 │ │
+│ │                │   target_session_attrs=<SessionAttribute.any: 'any'>    │ │
+│ │                )                                                         │ │
+│ │ params_retry = ConnectionParameters(                                     │ │
+│ │                │   user='quant_admin',                                   │ │
+│ │                │   password='pass',                                      │ │
+│ │                │   database='quant_trader',                              │ │
+│ │                │   ssl=None,                                             │ │
+│ │                │   sslmode=<SSLMode.prefer: 2>,                          │ │
+│ │                │   direct_tls=False,                                     │ │
+│ │                │   server_settings=None,                                 │ │
+│ │                │   target_session_attrs=<SessionAttribute.any: 'any'>    │ │
+│ │                )                                                         │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\asyncpg\connect_utils.py:873 in        │
+│ __connect_addr                                                               │
+│                                                                              │
+│    870 │   else:                                                             │
+│    871 │   │   connector = loop.create_connection(proto_factory, *addr)      │
+│    872 │                                                                     │
+│ >  873 │   tr, pr = await connector                                          │
+│    874 │                                                                     │
+│    875 │   try:                                                              │
+│    876 │   │   await connected                                               │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │         addr = ('localhost', 5432)                                       │ │
+│ │       config = ConnectionConfiguration(                                  │ │
+│ │                │   command_timeout=None,                                 │ │
+│ │                │   statement_cache_size=100,                             │ │
+│ │                │   max_cached_statement_lifetime=300,                    │ │
+│ │                │   max_cacheable_statement_size=15360                    │ │
+│ │                )                                                         │ │
+│ │    connected = <Future pending>                                          │ │
+│ │    connector = <coroutine object _create_ssl_connection at               │ │
+│ │                0x00000248241EBEC0>                                       │ │
+│ │         loop = <ProactorEventLoop running=False closed=True debug=False> │ │
+│ │       params = ConnectionParameters(                                     │ │
+│ │                │   user='quant_admin',                                   │ │
+│ │                │   password='pass',                                      │ │
+│ │                │   database='quant_trader',                              │ │
+│ │                │   ssl=<ssl.SSLContext object at 0x00000248243978D0>,    │ │
+│ │                │   sslmode=<SSLMode.prefer: 2>,                          │ │
+│ │                │   direct_tls=False,                                     │ │
+│ │                │   server_settings=None,                                 │ │
+│ │                │   target_session_attrs=<SessionAttribute.any: 'any'>    │ │
+│ │                )                                                         │ │
+│ │ params_input = ConnectionParameters(                                     │ │
+│ │                │   user='quant_admin',                                   │ │
+│ │                │   password='pass',                                      │ │
+│ │                │   database='quant_trader',                              │ │
+│ │                │   ssl=<ssl.SSLContext object at 0x00000248243978D0>,    │ │
+│ │                │   sslmode=<SSLMode.prefer: 2>,                          │ │
+│ │                │   direct_tls=False,                                     │ │
+│ │                │   server_settings=None,                                 │ │
+│ │                │   target_session_attrs=<SessionAttribute.any: 'any'>    │ │
+│ │                )                                                         │ │
+│ │        retry = True                                                      │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\site-packages\asyncpg\connect_utils.py:744 in        │
+│ _create_ssl_connection                                                       │
+│                                                                              │
+│    741 async def _create_ssl_connection(protocol_factory, host, port, *,     │
+│    742 │   │   │   │   │   │   │   │    loop, ssl_context, ssl_is_advisory=F │
+│    743 │                                                                     │
+│ >  744 │   tr, pr = await loop.create_connection(                            │
+│    745 │   │   lambda: TLSUpgradeProto(loop, host, port,                     │
+│    746 │   │   │   │   │   │   │   │   ssl_context, ssl_is_advisory),        │
+│    747 │   │   host, port)                                                   │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │            host = 'localhost'                                            │ │
+│ │            loop = <ProactorEventLoop running=False closed=True           │ │
+│ │                   debug=False>                                           │ │
+│ │            port = 5432                                                   │ │
+│ │     ssl_context = <ssl.SSLContext object at 0x00000248243978D0>          │ │
+│ │ ssl_is_advisory = True                                                   │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ D:\Developer\Python\Lib\asyncio\base_events.py:1128 in create_connection     │
+│                                                                              │
+│   1125 │   │   │   │   │   │   │   raise exceptions[0]                       │
+│   1126 │   │   │   │   │   │   # Raise a combined exception so the user can  │
+│   1127 │   │   │   │   │   │   # the various error messages.                 │
+│ > 1128 │   │   │   │   │   │   raise OSError('Multiple exceptions: {}'.forma │
+│   1129 │   │   │   │   │   │   │   ', '.join(str(exc) for exc in exceptions) │
+│   1130 │   │   │   │   finally:                                              │
+│   1131 │   │   │   │   │   exceptions = None                                 │
+│                                                                              │
+│ ┌───────────────────────────────── locals ─────────────────────────────────┐ │
+│ │              addrinfo = (                                                │ │
+│ │                         │   <AddressFamily.AF_INET: 2>,                  │ │
+│ │                         │   <SocketKind.SOCK_STREAM: 1>,                 │ │
+│ │                         │   0,                                           │ │
+│ │                         │   '',                                          │ │
+│ │                         │   ('127.0.0.1', 5432)                          │ │
+│ │                         )                                                │ │
+│ │            all_errors = False                                            │ │
+│ │            exceptions = None                                             │ │
+│ │                family = 0                                                │ │
+│ │                 flags = 0                                                │ │
+│ │  happy_eyeballs_delay = None                                             │ │
+│ │                  host = 'localhost'                                      │ │
+│ │                 infos = [                                                │ │
+│ │                         │   (                                            │ │
+│ │                         │   │   <AddressFamily.AF_INET6: 23>,            │ │
+│ │                         │   │   <SocketKind.SOCK_STREAM: 1>,             │ │
+│ │                         │   │   0,                                       │ │
+│ │                         │   │   '',                                      │ │
+│ │                         │   │   ('::1', 5432, 0, 0)                      │ │
+│ │                         │   ),                                           │ │
+│ │                         │   (                                            │ │
+│ │                         │   │   <AddressFamily.AF_INET: 2>,              │ │
+│ │                         │   │   <SocketKind.SOCK_STREAM: 1>,             │ │
+│ │                         │   │   0,                                       │ │
+│ │                         │   │   '',                                      │ │
+│ │                         │   │   ('127.0.0.1', 5432)                      │ │
+│ │                         │   )                                            │ │
+│ │                         ]                                                │ │
+│ │            interleave = None                                             │ │
+│ │           laddr_infos = None                                             │ │
+│ │            local_addr = None                                             │ │
+│ │                 model = '[WinError 5] 拒绝访问。'                        │ │
+│ │                  port = 5432                                             │ │
+│ │                 proto = 0                                                │ │
+│ │                  self = <ProactorEventLoop running=False closed=True     │ │
+│ │                         debug=False>                                     │ │
+│ │       server_hostname = None                                             │ │
+│ │                  sock = None                                             │ │
+│ │                   ssl = None                                             │ │
+│ │ ssl_handshake_timeout = None                                             │ │
+│ │  ssl_shutdown_timeout = None                                             │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────┘
+OSError: Multiple exceptions: [WinError 5] 拒绝访问。, [WinError 1225] 
+远程计算机拒绝网络连接。
+
+============================== warnings summary ===============================
+tests/test_celery_app.py::test_stub_task_callable
+  D:\Developer\Python\Lib\site-packages\sqlalchemy\dialects\postgresql\__init__.py:14: RuntimeWarning: coroutine 'run_signal_scan.<locals>._run' was never awaited
+    from . import psycopg  # noqa
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_ai_tasks.py::test_normal_scan_flow_creates_order - assert 0...
+FAILED tests/test_ai_tasks.py::test_risk_blocked_skips_order - assert 0 == 1
+FAILED tests/test_celery_app.py::test_stub_task_callable - OSError: Multiple ...
+================== 3 failed, 14 passed, 1 warning in 10.65s ===================
