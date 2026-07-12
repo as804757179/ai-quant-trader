@@ -6,6 +6,9 @@ import structlog
 from sqlalchemy import text
 
 from app.data.cache import CacheManager
+from app.data.certification import DataCertificationService
+from app.data.certified_kline_repository import CertifiedKlineRepository
+from app.data.research_profiles import ResearchDataRequirementProfile
 from app.data.client import DataClient
 from app.db import get_db
 
@@ -13,14 +16,16 @@ logger = structlog.get_logger()
 
 
 class DataService:
-    def __init__(self) -> None:
-        self.client = DataClient()
+    def __init__(self, *, shared_client: bool = True) -> None:
+        self.client = DataClient(shared=shared_client)
         self.cache = CacheManager()
+        self.certified_klines = CertifiedKlineRepository()
 
     async def close(self) -> None:
         await self.client.close()
 
     async def get_quote(self, code: str) -> dict | None:
+        code = str(code).zfill(6) if str(code).isdigit() else str(code)
         cache_key = f"quote:{code}"
         cached = await self.cache.get(cache_key)
         if cached:
@@ -34,6 +39,43 @@ class DataService:
             logger.warning("get_quote_failed", code=code, error=str(exc))
         return None
 
+    async def get_quotes_batch(self, codes: list[str]) -> dict[str, dict]:
+        """批量取行情：L1/Redis 优先，缺口一次远程批量拉取。"""
+        norm = []
+        seen: set[str] = set()
+        for c in codes:
+            if not c:
+                continue
+            code = str(c).zfill(6) if str(c).isdigit() else str(c)
+            if code not in seen:
+                seen.add(code)
+                norm.append(code)
+        if not norm:
+            return {}
+
+        keys = [f"quote:{c}" for c in norm]
+        cached_list = await self.cache.mget(keys)
+        out: dict[str, dict] = {}
+        missing: list[str] = []
+        for code, cached in zip(norm, cached_list):
+            if cached and self._validate_quote(cached):
+                out[code] = cached
+            else:
+                missing.append(code)
+
+        if missing:
+            try:
+                remote = await self.client.fetch_quotes_batch(missing)
+            except Exception as exc:
+                logger.warning("get_quotes_batch_failed", error=str(exc), n=len(missing))
+                remote = {}
+            for code in missing:
+                data = remote.get(code)
+                if data and self._validate_quote(data):
+                    out[code] = data
+                    await self.cache.set(f"quote:{code}", data, ttl=CacheManager.TTL_QUOTE)
+        return out
+
     async def get_kline(
         self,
         code: str,
@@ -41,52 +83,170 @@ class DataService:
         limit: int = 200,
         adj: str = "qfq",
     ) -> list[dict]:
+        code = str(code).zfill(6) if str(code).isdigit() else str(code)
+        period = self._normalize_period(period)
         cache_key = f"kline:{code}:{period}:{limit}:{adj}"
         cached = await self.cache.get(cache_key)
         if cached:
             return cached
 
         try:
-            async with get_db() as db:
-                result = await db.execute(
-                    text(
-                        """
-                        SELECT time, open, high, low, close, volume, amount,
-                               turnover_rate, adj_factor
-                        FROM market.klines
-                        WHERE stock_code = :code AND period = :period
-                        ORDER BY time DESC
-                        LIMIT :limit
-                        """
-                    ),
-                    {"code": code, "period": period, "limit": limit},
-                )
-                rows = [dict(r._mapping) for r in result.fetchall()]
+            # 分钟线远程通常更快且更新；日线优先 DB
+            prefer_remote = period.endswith("min")
+            rows: list[dict] = []
+            if not prefer_remote:
+                async with get_db() as db:
+                    result = await db.execute(
+                        text(
+                            """
+                            SELECT time, open, high, low, close, volume, amount,
+                                   turnover_rate, adj_factor
+                            FROM market.klines
+                            WHERE stock_code = :code AND period = :period
+                            ORDER BY time DESC
+                            LIMIT :limit
+                            """
+                        ),
+                        {"code": code, "period": period, "limit": limit},
+                    )
+                    rows = [dict(r._mapping) for r in result.fetchall()]
 
-            if len(rows) >= limit * 0.8:
+            # 日/周/月：库内有数据直接用；分钟线数据过少则继续拉远程
+            use_db = bool(rows) and (
+                period in ("1d", "1w", "1M") or len(rows) >= min(limit, 30)
+            )
+            if use_db:
                 rows.reverse()
                 for row in rows:
                     row["time"] = row["time"].isoformat() if row.get("time") else None
+                    for num_key in (
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "amount",
+                        "adj_factor",
+                        "turnover_rate",
+                    ):
+                        if row.get(num_key) is not None:
+                            try:
+                                row[num_key] = float(row[num_key])
+                            except (TypeError, ValueError):
+                                pass
                 if adj == "qfq":
                     rows = self._apply_forward_adj(rows)
                 ttl = (
                     CacheManager.TTL_KLINE_DAILY
-                    if period == "1d"
+                    if period in ("1d", "1w", "1M")
                     else CacheManager.TTL_KLINE_MIN
                 )
                 await self.cache.set(cache_key, rows, ttl=ttl)
                 return rows
 
             data = await self.client.fetch_kline(code, period, limit)
+            if not data:
+                # a-stock-data 挂掉时直连新浪
+                from app.data.sina_kline import fetch_sina_kline
+
+                data = await fetch_sina_kline(code, period, limit)
+                if data:
+                    logger.info(
+                        "kline_sina_fallback",
+                        code=code,
+                        period=period,
+                        bars=len(data),
+                    )
             if data:
-                await self._save_klines(code, period, data)
+                # 先返回再异步落库，避免串行 INSERT 拖慢首屏
+                if period in ("1d", "1w", "1M"):
+                    asyncio.create_task(self._save_klines_safe(code, period, data))
                 if adj == "qfq":
                     data = self._apply_forward_adj(data)
-                await self.cache.set(cache_key, data, ttl=60)
+                ttl = (
+                    CacheManager.TTL_KLINE_DAILY
+                    if period in ("1d", "1w", "1M")
+                    else CacheManager.TTL_KLINE_MIN
+                )
+                await self.cache.set(cache_key, data, ttl=ttl)
                 return data
         except Exception as exc:
             logger.error("get_kline_failed", code=code, period=period, error=str(exc))
+            # 最终降级
+            try:
+                from app.data.sina_kline import fetch_sina_kline
+
+                data = await fetch_sina_kline(code, period, limit)
+                if data:
+                    return data
+            except Exception:
+                pass
         return []
+
+    async def get_certified_kline(
+        self,
+        code: str,
+        period: str,
+        limit: int,
+        adjustment: str,
+        research_use_scope: str,
+        requirement_profile: str | None,
+        required_fields: list[str] | None,
+    ) -> list[dict]:
+        period = self._normalize_period(period)
+        rows = await self.certified_klines.get_bars(
+            [code], period=period, adjustment=adjustment
+        )
+        rows = rows[-limit:]
+        if rows:
+            await self.certified_klines.assert_dataset_ready(
+                [code],
+                period=period,
+                adjustment=adjustment,
+                research_use_scope=research_use_scope,
+                requirement_profile=requirement_profile,
+                required_fields=required_fields,
+                start_date=rows[0]["trading_date"],
+                end_date=rows[-1]["trading_date"],
+            )
+        for row in rows:
+            row["time"] = datetime.combine(
+                row["trading_date"], row["market_close_time"]
+            ).isoformat()
+            for key in ("open", "high", "low", "close", "volume", "amount", "turnover_rate"):
+                if row.get(key) is not None:
+                    row[key] = float(row[key])
+        return rows
+
+    @staticmethod
+    def _normalize_period(period: str) -> str:
+        p = (period or "1d").strip()
+        aliases = {
+            "day": "1d",
+            "daily": "1d",
+            "d": "1d",
+            "week": "1w",
+            "w": "1w",
+            "month": "1M",
+            "mon": "1M",
+            "m": "1M",
+            "1m": "1min",
+            "5m": "5min",
+            "15m": "15min",
+            "30m": "30min",
+            "60m": "60min",
+            "1h": "60min",
+            "120m": "60min",
+        }
+        return aliases.get(p.lower(), p)
+
+    async def _save_klines_safe(self, code: str, period: str, klines: list[dict]) -> None:
+        try:
+            await self._save_klines(code, period, klines)
+        except Exception as save_exc:
+            logger.warning(
+                "kline_save_failed", code=code, period=period, error=str(save_exc)
+            )
 
     async def get_fund_flow(self, code: str, days: int = 10) -> list[dict]:
         cache_key = f"fund_flow:{code}:{days}"
@@ -146,15 +306,19 @@ class DataService:
                     if row.get("publish_time"):
                         row["publish_time"] = row["publish_time"].isoformat()
 
-            fresh_news = await self.client.fetch_news(code, limit=10) or []
-            seen: set[str] = set()
-            unique_news: list[dict] = []
-            for item in fresh_news + db_news:
-                key = item.get("title", "")
-                if key and key not in seen:
-                    seen.add(key)
-                    unique_news.append(item)
-            unique_news = unique_news[:limit]
+            # 库内已有足够公告时跳过远程，减少超时等待
+            if len(db_news) >= min(limit, 5):
+                unique_news = db_news[:limit]
+            else:
+                fresh_news = await self.client.fetch_news(code, limit=10) or []
+                seen: set[str] = set()
+                unique_news: list[dict] = []
+                for item in fresh_news + db_news:
+                    key = item.get("title", "")
+                    if key and key not in seen:
+                        seen.add(key)
+                        unique_news.append(item)
+                unique_news = unique_news[:limit]
             await self.cache.set(cache_key, unique_news, ttl=CacheManager.TTL_NEWS)
             return unique_news
         except Exception as exc:
@@ -176,10 +340,10 @@ class DataService:
     def _apply_forward_adj(self, klines: list[dict]) -> list[dict]:
         if not klines:
             return klines
-        latest_factor = klines[-1].get("adj_factor", 1.0) or 1.0
+        latest_factor = float(klines[-1].get("adj_factor", 1.0) or 1.0)
         result = []
         for k in klines:
-            factor = k.get("adj_factor", 1.0) or 1.0
+            factor = float(k.get("adj_factor", 1.0) or 1.0)
             ratio = factor / latest_factor if latest_factor else 1.0
             result.append(
                 {
@@ -188,40 +352,56 @@ class DataService:
                     "high": round(float(k["high"]) * ratio, 4),
                     "low": round(float(k["low"]) * ratio, 4),
                     "close": round(float(k["close"]) * ratio, 4),
+                    "volume": int(k.get("volume") or 0),
+                    "amount": float(k.get("amount") or 0),
                 }
             )
         return result
 
     async def _save_klines(self, code: str, period: str, klines: list[dict]) -> None:
+        if not klines:
+            return
+        # 批量 executemany，避免逐行往返
+        rows = []
+        for k in klines:
+            ts = k.get("time")
+            if isinstance(ts, str):
+                ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            rows.append(
+                {
+                    "time": ts,
+                    "code": code,
+                    "period": period,
+                    "open": k["open"],
+                    "high": k["high"],
+                    "low": k["low"],
+                    "close": k["close"],
+                    "volume": k.get("volume", 0),
+                    "amount": k.get("amount", 0),
+                    "turnover_rate": k.get("turnover_rate"),
+                }
+            )
+        sql = text(
+            """
+            INSERT INTO market.klines
+            (time, stock_code, period, open, high, low, close, volume, amount, turnover_rate)
+            VALUES (:time, :code, :period, :open, :high, :low, :close, :volume, :amount, :turnover_rate)
+            ON CONFLICT (time, stock_code, period) DO UPDATE SET
+                open = EXCLUDED.open, high = EXCLUDED.high, low = EXCLUDED.low,
+                close = EXCLUDED.close, volume = EXCLUDED.volume, amount = EXCLUDED.amount
+            """
+        )
         async with get_db() as db:
-            for k in klines:
-                ts = k.get("time")
-                if isinstance(ts, str):
-                    ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-                await db.execute(
-                    text(
-                        """
-                        INSERT INTO market.klines
-                        (time, stock_code, period, open, high, low, close, volume, amount, turnover_rate)
-                        VALUES (:time, :code, :period, :open, :high, :low, :close, :volume, :amount, :turnover_rate)
-                        ON CONFLICT (time, stock_code, period) DO UPDATE SET
-                            open = EXCLUDED.open, high = EXCLUDED.high, low = EXCLUDED.low,
-                            close = EXCLUDED.close, volume = EXCLUDED.volume, amount = EXCLUDED.amount
-                        """
-                    ),
-                    {
-                        "time": ts,
-                        "code": code,
-                        "period": period,
-                        "open": k["open"],
-                        "high": k["high"],
-                        "low": k["low"],
-                        "close": k["close"],
-                        "volume": k.get("volume", 0),
-                        "amount": k.get("amount", 0),
-                        "turnover_rate": k.get("turnover_rate"),
-                    },
-                )
+            provenance_rows = [{**k, "stock_code": code, "period": period} for k in klines]
+            certification = DataCertificationService()
+            batch_id, quality = await certification.create_batch(
+                db, provenance_rows, provider="unknown", source="unknown", period=period,
+            )
+            await db.execute(sql, rows)
+            await certification.record_provenance(
+                db, provenance_rows, batch_id=batch_id, provider="unknown", source="unknown",
+                quality=quality, is_synthetic=False,
+            )
 
     async def get_full_context(self, code: str) -> dict[str, Any]:
         """获取 AI 分析所需的完整数据上下文（并发拉取）。"""
@@ -236,8 +416,24 @@ class DataService:
             dragon,
         ) = await asyncio.gather(
             self.get_quote(code),
-            self.get_kline(code, "1d", 60),
-            self.get_kline(code, "60min", 30),
+            self.get_certified_kline(
+                code,
+                "1d",
+                60,
+                "raw",
+                "raw_price_analysis",
+                "OHLCV_RETURN_V1",
+                list(ResearchDataRequirementProfile.get("OHLCV_RETURN_V1").required_fields),
+            ),
+            self.get_certified_kline(
+                code,
+                "60min",
+                30,
+                "raw",
+                "raw_price_analysis",
+                "OHLCV_RETURN_V1",
+                list(ResearchDataRequirementProfile.get("OHLCV_RETURN_V1").required_fields),
+            ),
             self.get_fund_flow(code, 5),
             self.get_news(code, 10),
             self.get_latest_financial_report(code),
@@ -259,6 +455,7 @@ class DataService:
         dragon = _safe(dragon) or []
 
         indicators = self._calculate_indicators(kline_1d) if kline_1d else {}
+        historical_data_status = "certified" if kline_1d else "uncertified"
         stock_info = await self._get_stock_info(code)
         data_quality_score = self._calc_data_quality_score(quote, kline_1d, financial)
 
@@ -311,6 +508,11 @@ class DataService:
                 stock_info.get("total_shares"), quote.get("price")
             ),
             "data_quality_score": data_quality_score,
+            "historical_data_status": historical_data_status,
+            "historical_data_warning": (
+                None if historical_data_status == "certified"
+                else "当前历史数据未认证，仅可用于展示，不可用于交易判断。"
+            ),
         }
 
     async def get_latest_financial_report(self, code: str) -> dict[str, Any]:

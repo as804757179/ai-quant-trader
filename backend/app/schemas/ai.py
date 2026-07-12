@@ -45,6 +45,10 @@ class AnalyzeResponseData(BaseModel):
     from_cache: bool = False
     signal_id: str | None = None
     data_quality_score: float | None = None
+    historical_data_status: str = "unknown"
+    tradable: bool = False
+    order_created: bool = False
+    warning: str | None = None
 
 
 class SignalListItem(BaseModel):

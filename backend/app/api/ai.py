@@ -1,12 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-import structlog
-
+from app.core.logging import FEATURE_AI, get_logger
 from app.core.response import APIResponse, ok
 from app.schemas.ai import AnalyzeResponseData
 from app.services.ai_service import AIService, AnalysisError
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__, feature=FEATURE_AI)
 
 router = APIRouter()
 

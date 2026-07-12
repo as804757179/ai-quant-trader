@@ -1,0 +1,38 @@
+groups:
+  - name: quant_trader_alerts
+    rules:
+      - alert: FuseActive
+        expr: quant_risk_fuse_active > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "交易熔断已激活 ({{ $labels.mode }})"
+          description: "mode={{ $labels.mode }} 熔断持续超过 1 分钟"
+
+      - alert: HighCriticalAlerts
+        expr: increase(quant_alerts_total{level="CRITICAL"}[15m]) > 3
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "15 分钟内 CRITICAL 告警过多"
+          description: "CRITICAL 告警增量 {{ $value }}"
+
+      - alert: DingTalkDeliveryIssues
+        expr: increase(quant_dingtalk_sent_total{result="fail"}[30m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "钉钉推送失败增多"
+          description: "30 分钟失败次数 {{ $value }}"
+
+      - alert: BacktestFailures
+        expr: increase(quant_backtest_total{status="failed"}[1h]) > 3
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "回测失败增多"
+          description: "1 小时失败次数 {{ $value }}"

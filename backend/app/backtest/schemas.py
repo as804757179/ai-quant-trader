@@ -32,6 +32,8 @@ class BacktestConfig:
     min_commission: float = 5.0
     execution_mode: str = "open_auction"  # open_auction | continuous
     lot_size: int = 100
+    trusted_mode: bool = False
+    trusted_calendar: list[date] | None = None
 
 
 @dataclass
@@ -59,6 +61,8 @@ class TradeRecord:
     slippage_cost: float
     status: str
     fail_reason: str | None = None
+    transfer_fee: float = 0.0
+    realized_pnl: float = 0.0
 
 
 @dataclass
@@ -69,6 +73,9 @@ class PositionSnapshot:
     avg_cost: float
     market_price: float
     market_value: float
+    total_cost: float = 0.0
+    realized_pnl: float = 0.0
+    unrealized_pnl: float = 0.0
 
 
 @dataclass

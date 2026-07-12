@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI Quant Trader Governance"
+  short_description: "项目长期架构、安全边界、定向上下文读取与开发验收工作导航"
+  default_prompt: "Use $ai-quant-trader-governance to handle this repository task with targeted context and current requirements first."

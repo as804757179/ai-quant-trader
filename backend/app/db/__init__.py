@@ -11,7 +11,8 @@ engine = create_async_engine(
     max_overflow=settings.DB_MAX_OVERFLOW,
     pool_pre_ping=True,
     pool_recycle=3600,
-    echo=settings.APP_ENV == "development",
+    # 全市场写入时 echo 会极慢；仅显式开启 SQL_ECHO=true
+    echo=bool(getattr(settings, "SQL_ECHO", False)),
 )
 
 AsyncSessionLocal = async_sessionmaker(

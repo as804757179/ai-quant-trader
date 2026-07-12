@@ -1,15 +1,16 @@
-from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
+
+from app.core.timeutil import now_cn_iso
 
 
 class APIResponse(BaseModel):
     success: bool = True
     data: Any = None
     message: str = "OK"
-    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    timestamp: str = Field(default_factory=now_cn_iso)
     error_code: str | None = None
 
 

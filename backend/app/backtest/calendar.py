@@ -20,8 +20,27 @@ def build_trading_days(
     start: date,
     end: date,
     bars_by_stock: dict[str, dict[date, DailyBar]] | None = None,
+    *,
+    certified_calendar: list[date] | None = None,
+    require_certified: bool = False,
 ) -> list[date]:
-    """从 K 线数据提取交易日；无数据时回退为工作日。"""
+    if require_certified:
+        if not certified_calendar:
+            raise ValueError("certified trading calendar is required")
+        days = sorted({day for day in certified_calendar if start <= day <= end})
+        if not days:
+            raise ValueError("certified trading calendar has no coverage")
+        bar_dates = {
+            trade_date
+            for stock_bars in (bars_by_stock or {}).values()
+            for trade_date in stock_bars
+            if start <= trade_date <= end
+        }
+        if not bar_dates.issubset(set(days)):
+            raise ValueError("Kline date is outside certified trading calendar")
+        return days
+
+    """从 K 线数据提取交易日；普通测试无数据时可使用显式工作日 fixture。"""
     if bars_by_stock:
         dates: set[date] = set()
         for stock_bars in bars_by_stock.values():

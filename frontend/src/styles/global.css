@@ -1,0 +1,185 @@
+/* ===== 全站统一布局：左侧固定菜单 + 内容紧贴靠左 ===== */
+:root {
+  --page-pad-x: 12px;
+  --page-pad-y: 12px;
+  --page-gap: 12px;
+  --radius-card: 8px;
+  --color-up: #cf1322;
+  --color-down: #389e0d;
+  --sider-width: 200px;
+}
+
+@media (max-width: 768px) {
+  :root {
+    --page-pad-x: 10px;
+    --page-pad-y: 10px;
+    --page-gap: 10px;
+  }
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 去掉 ProLayout 内容区默认大留白 */
+.ant-pro-layout .ant-pro-layout-content,
+.ant-pro-layout .ant-pro-page-container,
+.ant-pro-layout .ant-pro-page-container-children-container,
+.ant-pro-layout .ant-pro-grid-content,
+.ant-pro-layout .ant-pro-grid-content-children {
+  padding: 0 !important;
+  margin: 0 !important;
+  max-width: none !important;
+}
+
+.ant-pro-layout .ant-layout-content {
+  min-height: 100vh;
+  background: #f5f6f8;
+}
+
+/* 主内容区紧贴侧栏，不居中 */
+.ant-pro-layout .ant-pro-layout-container,
+.ant-pro-layout .ant-layout {
+  max-width: none !important;
+}
+
+/* 固定侧栏宽度，避免晃动 */
+.ant-pro-sider,
+.ant-layout-sider,
+.ant-pro-sider-fixed,
+.ant-pro-sider.ant-layout-sider-fixed {
+  width: var(--sider-width) !important;
+  min-width: var(--sider-width) !important;
+  max-width: var(--sider-width) !important;
+  flex: 0 0 var(--sider-width) !important;
+}
+
+/* 内容区左侧 margin 与侧栏同宽（fixSiderbar 时） */
+.ant-pro-layout .ant-layout {
+  margin-left: 0 !important;
+}
+
+/* 统一页面容器：全宽靠左，小内边距 */
+.page-shell {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: var(--page-pad-y) var(--page-pad-x) calc(var(--page-pad-y) + 16px);
+  box-sizing: border-box;
+}
+
+.page-shell__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: var(--page-gap);
+}
+
+.page-shell__title {
+  margin: 0 !important;
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  line-height: 1.35 !important;
+}
+
+.page-shell__subtitle {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.page-shell__extra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-shell__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--page-gap);
+  width: 100%;
+}
+
+.page-shell .ant-card {
+  border-radius: var(--radius-card);
+}
+
+.page-shell .ant-card-head {
+  min-height: 44px;
+}
+
+/* 表单：窄屏纵向 */
+.page-form-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: flex-end;
+}
+
+.page-form-bar .ant-form-item {
+  margin-bottom: 8px !important;
+}
+
+@media (max-width: 768px) {
+  .page-form-bar.ant-form-inline {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .page-form-bar.ant-form-inline .ant-form-item {
+    margin-inline-end: 0 !important;
+    width: 100%;
+  }
+
+  .page-form-bar.ant-form-inline .ant-form-item-control,
+  .page-form-bar.ant-form-inline .ant-input,
+  .page-form-bar.ant-form-inline .ant-select,
+  .page-form-bar.ant-form-inline .ant-input-number,
+  .page-form-bar.ant-form-inline .ant-picker {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .page-form-bar .ant-btn {
+    width: 100%;
+  }
+
+  .page-table-scroll {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (max-width: 576px) {
+  .page-shell .ant-statistic-content {
+    font-size: 18px !important;
+  }
+}
+
+.text-up {
+  color: var(--color-up) !important;
+}
+.text-down {
+  color: var(--color-down) !important;
+}
+
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}

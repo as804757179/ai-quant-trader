@@ -45,18 +45,33 @@ class RiskMonitor:
         )
         peak_row = peak_result.mappings().first()
 
-        total_assets = float(account["total_assets"]) if account else 0.0
+        cash = float(account["cash"]) if account else 0.0
+        # 以持仓表实时汇总市值，避免增量更新漂移
+        positions_mv = sum(float(p.get("market_value") or 0) for p in positions)
+        # 优先用 cash + 持仓市值；无持仓时回退账户字段
+        if account:
+            total_assets = cash + positions_mv
+            recorded_assets = float(account["total_assets"] or 0)
+            # 若两边接近仍以实时为准；无现金无持仓时用记录值
+            if total_assets <= 0 and recorded_assets > 0:
+                total_assets = recorded_assets
+        else:
+            total_assets = 0.0
+
         peak = float(peak_row["peak"]) if peak_row and peak_row["peak"] else total_assets
+        # 峰值至少不低于当前资产
+        if peak < total_assets:
+            peak = total_assets
         drawdown = (total_assets - peak) / peak if peak > 0 else 0
+
+        daily_pnl = float(account["daily_pnl"]) if account and account["daily_pnl"] else 0.0
 
         return {
             "total_assets": total_assets,
-            "cash": float(account["cash"]) if account else 0.0,
-            "total_market_value": float(account["market_value"]) if account else 0.0,
-            "daily_pnl": float(account["daily_pnl"]) if account and account["daily_pnl"] else 0.0,
-            "daily_pnl_pct": (
-                float(account["daily_pnl"]) / total_assets if account and total_assets else 0.0
-            ),
+            "cash": cash,
+            "total_market_value": positions_mv,
+            "daily_pnl": daily_pnl,
+            "daily_pnl_pct": (daily_pnl / total_assets) if total_assets else 0.0,
             "drawdown_from_peak": drawdown,
             "positions": {p["stock_code"]: dict(p) for p in positions},
         }

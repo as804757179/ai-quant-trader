@@ -12,7 +12,7 @@ alembic==1.13.1
 # 缓存/队列
 redis[hiredis]==5.0.1
 celery==5.3.6
-redbeat==2.2.0
+celery-redbeat==2.2.0
 
 # AI模型
 openai==1.10.0

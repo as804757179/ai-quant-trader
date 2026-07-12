@@ -4,7 +4,6 @@ import asyncio
 import json
 import os
 import time
-from datetime import datetime, timezone
 from typing import Any
 
 import redis.asyncio as aioredis
@@ -12,6 +11,7 @@ import structlog
 from fastapi import WebSocket
 
 from app.core.config import settings
+from app.core.timeutil import now_cn_iso
 
 logger = structlog.get_logger(__name__)
 
@@ -133,7 +133,7 @@ class WebSocketManager:
             {
                 **data,
                 "_channel": channel,
-                "_ts": datetime.now(timezone.utc).isoformat(),
+                "_ts": now_cn_iso(),
             },
             ensure_ascii=False,
             default=str,

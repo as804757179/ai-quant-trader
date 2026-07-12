@@ -47,11 +47,17 @@ app.conf.update(
         "tasks.weekly_full_data_sync": {"queue": "low"},
         "tasks.check_kline_completeness": {"queue": "low"},
         "tasks.reconcile_accounts": {"queue": "low"},
+        "tasks.sync_open_orders": {"queue": "high"},
     },
     beat_schedule={
         "sync-quotes-3s": {
             "task": "tasks.sync_realtime_quotes",
             "schedule": 3.0,
+            "options": {"queue": "high"},
+        },
+        "sync-open-orders-15s": {
+            "task": "tasks.sync_open_orders",
+            "schedule": 15.0,
             "options": {"queue": "high"},
         },
         "sync-portfolio-30s": {

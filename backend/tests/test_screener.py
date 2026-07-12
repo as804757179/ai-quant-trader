@@ -99,7 +99,7 @@ def test_factor_library_basic_filters() -> None:
 
 def test_screen_custom_conditions() -> None:
     async def _run() -> None:
-        engine = ScreenerEngine(cache=AsyncMock())
+        engine = ScreenerEngine(cache=AsyncMock(), release_enabled=True)
         engine.cache.get = AsyncMock(return_value=None)
         engine.cache.set = AsyncMock()
 
@@ -126,24 +126,26 @@ def test_screen_custom_conditions() -> None:
 
 def test_screen_preset_ai_momentum() -> None:
     async def _run() -> None:
-        engine = ScreenerEngine(cache=AsyncMock())
+        engine = ScreenerEngine(cache=AsyncMock(), release_enabled=True)
         engine.cache.get = AsyncMock(return_value=None)
         engine.cache.set = AsyncMock()
 
-        with patch.object(engine, "_load_universe", AsyncMock(return_value=SAMPLE_UNIVERSE)):
+        with patch.object(engine, "_load_universe", AsyncMock(return_value=[])):
             result = await engine.screen_preset("ai_momentum", limit=10)
 
         assert result["preset_id"] == "ai_momentum"
-        assert result["preset_name"] == "AI动量"
-        assert result["total"] >= 1
-        assert all(item["change_pct"] >= 2 for item in result["items"])
+        assert result["preset_name"] == "动量偏强"
+        assert result["total"] == 0
+        assert result["items"] == []
+        assert result["data_certification"] == "certified_only"
+        assert "无已认证历史数据" in result["note"]
 
     asyncio.run(_run())
 
 
 def test_screen_preset_value_rebound() -> None:
     async def _run() -> None:
-        engine = ScreenerEngine(cache=AsyncMock())
+        engine = ScreenerEngine(cache=AsyncMock(), release_enabled=True)
         engine.cache.get = AsyncMock(return_value=None)
         engine.cache.set = AsyncMock()
 
@@ -159,7 +161,7 @@ def test_screen_preset_value_rebound() -> None:
 
 def test_screen_by_theme_new_energy() -> None:
     async def _run() -> None:
-        engine = ScreenerEngine(cache=AsyncMock())
+        engine = ScreenerEngine(cache=AsyncMock(), release_enabled=True)
         engine.cache.get = AsyncMock(return_value=None)
         engine.cache.set = AsyncMock()
 
@@ -179,7 +181,7 @@ def test_screen_by_theme_new_energy() -> None:
 
 def test_screen_preset_sector_leader() -> None:
     async def _run() -> None:
-        engine = ScreenerEngine(cache=AsyncMock())
+        engine = ScreenerEngine(cache=AsyncMock(), release_enabled=True)
         engine.cache.get = AsyncMock(return_value=None)
         engine.cache.set = AsyncMock()
 
@@ -195,7 +197,7 @@ def test_screen_preset_sector_leader() -> None:
 
 def test_screen_by_theme_ai_chip() -> None:
     async def _run() -> None:
-        engine = ScreenerEngine(cache=AsyncMock())
+        engine = ScreenerEngine(cache=AsyncMock(), release_enabled=True)
         engine.cache.get = AsyncMock(return_value=None)
         engine.cache.set = AsyncMock()
 
@@ -229,7 +231,7 @@ def test_api_presets_endpoint() -> None:
     payload = response.json()
     assert payload["success"] is True
     ids = {item["id"] for item in payload["data"]["items"]}
-    assert ids == {"ai_momentum", "value_rebound", "sector_leader"}
+    assert ids == {"all_active", "ai_momentum", "value_rebound", "sector_leader"}
 
 
 def test_api_screen_endpoint() -> None:

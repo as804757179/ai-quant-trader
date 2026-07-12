@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import chromadb
 import structlog
 
 from app.core.config import settings
 from app.rag.document_processor import DocumentProcessor
 from app.rag.embeddings import EmbeddingProvider, get_embedding_provider
+
+if TYPE_CHECKING:
+    import chromadb
 
 logger = structlog.get_logger(__name__)
 
@@ -16,14 +18,22 @@ COLLECTION_RESEARCH = "research_reports"
 COLLECTION_ANNOUNCEMENTS = "announcements"
 COLLECTION_NEWS = "news"
 
+try:
+    import chromadb as _chromadb
+
+    CHROMADB_AVAILABLE = True
+except ImportError:  # pragma: no cover - 本机无编译 chromadb 时降级
+    _chromadb = None  # type: ignore[assignment]
+    CHROMADB_AVAILABLE = False
+
 
 class RAGEngine:
-    """ChromaDB 向量检索引擎。"""
+    """ChromaDB 向量检索引擎（chromadb 未安装时自动降级为空检索）。"""
 
     def __init__(
         self,
         persist_dir: str | None = None,
-        client: chromadb.ClientAPI | None = None,
+        client: Any | None = None,
         embedding_provider: EmbeddingProvider | None = None,
         processor: DocumentProcessor | None = None,
     ) -> None:
@@ -31,12 +41,21 @@ class RAGEngine:
         self._client = client
         self._embedding_provider = embedding_provider
         self.processor = processor or DocumentProcessor()
-        self._collections: dict[str, chromadb.Collection] = {}
+        self._collections: dict[str, Any] = {}
+        self._disabled = not CHROMADB_AVAILABLE and client is None
+        if self._disabled:
+            logger.warning(
+                "rag_chromadb_unavailable",
+                hint="未安装 chromadb，RAG 检索将返回空结果；可安装 Visual C++ Build Tools 后 pip install chromadb",
+            )
 
     @property
-    def client(self) -> chromadb.ClientAPI:
+    def client(self) -> Any:
+        if self._disabled:
+            raise RuntimeError("chromadb 不可用")
         if self._client is None:
-            self._client = chromadb.PersistentClient(path=self.persist_dir)
+            assert _chromadb is not None
+            self._client = _chromadb.PersistentClient(path=self.persist_dir)
         return self._client
 
     @property
@@ -60,7 +79,7 @@ class RAGEngine:
             logger.info("rag_collection_ready", collection=name, key=key)
         return names
 
-    def _get_collection(self, key: str) -> chromadb.Collection:
+    def _get_collection(self, key: str) -> Any:
         if key not in self._collections:
             self.initialize_collections()
         return self._collections[key]
@@ -120,6 +139,8 @@ class RAGEngine:
         top_k: int,
         stock_code: str | None = None,
     ) -> str:
+        if self._disabled:
+            return ""
         logger.info(
             "rag_query",
             collection=collection_key,

@@ -1,10 +1,31 @@
-import uuid
+"""模拟交易：真实行情优先 + A 股规则本地撮合（非券商实盘）。"""
 
-import structlog
+from __future__ import annotations
+
+import uuid
+from datetime import date
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
+from app.core.logging import FEATURE_TRADE, get_logger
+from app.core.timeutil import today_cn
 from app.data.service import DataService
+from app.data.research_profiles import ResearchDataRequirementProfile
+from app.trade.account_ledger import recompute_account_assets, release_t1_available_qty
+from app.trade.ashare_rules import (
+    MarketSnapshot,
+    build_snapshot_from_kline,
+    build_snapshot_from_quote,
+    check_limit_board,
+    fees,
+    is_continuous_auction,
+    is_order_accept_time,
+    resolve_fill_price,
+    validate_lot,
+    validate_price_tick,
+)
 from app.trade.base_trader import (
     AccountInfo,
     BaseTrader,
@@ -13,81 +34,216 @@ from app.trade.base_trader import (
     OrderResult,
     Position,
 )
+from app.trade.idempotency import build_idempotency_key
 
-logger = structlog.get_logger()
+logger = get_logger(__name__, feature=FEATURE_TRADE)
 
 
 class SimulationTrader(BaseTrader):
-    COMMISSION_RATE = 0.0003
-    STAMP_TAX_RATE = 0.0005
-    SLIPPAGE_RATE = 0.001
-    MIN_COMMISSION = 5.0
-
     def __init__(self, db: AsyncSession, data_service: DataService) -> None:
         self.db = db
         self.data = data_service
         self.mode = "simulation"
 
+    async def _maybe_release_t1(self) -> dict:
+        """
+        T+1 释放：仅释放「今日无买入成交」的标的可卖数量。
+        避免把当日新买的仓位错误放开。
+        """
+        today = today_cn()  # date 对象，避免 asyncpg 把 str 绑成 date 失败
+        result = await self.db.execute(
+            text(
+                """
+                UPDATE trade.positions p
+                SET available_qty = total_qty,
+                    updated_at = NOW()
+                WHERE p.mode = :mode
+                  AND p.total_qty > 0
+                  AND p.available_qty < p.total_qty
+                  AND NOT EXISTS (
+                    SELECT 1 FROM trade.orders o
+                    WHERE o.stock_code = p.stock_code
+                      AND o.mode = p.mode
+                      AND o.side = 'BUY'
+                      AND o.status = 'FILLED'
+                      AND (timezone('Asia/Shanghai', o.filled_at))::date = :today
+                  )
+                """
+            ),
+            {"mode": self.mode, "today": today},
+        )
+        n = int(result.rowcount or 0)
+        if n:
+            logger.info("simulation_t1_released", released_rows=n, today=str(today))
+        return {"released_rows": n, "today": str(today)}
+
+    async def _resolve_market(self, code: str) -> MarketSnapshot | None:
+        """优先真实行情；失败再用日 K 收盘价。"""
+        code = str(code).zfill(6)
+        # 1) 实时/近实时行情（腾讯/通达信等，经 a-stock-data）
+        try:
+            quote = await self.data.get_quote(code)
+            if quote:
+                snap = build_snapshot_from_quote(code, quote)
+                if snap:
+                    return snap
+        except Exception as exc:
+            logger.warning("simulation_quote_failed", code=code, error=str(exc))
+
+        # 2) 远程/本地日 K
+        try:
+            klines = await self.data.get_certified_kline(
+                code,
+                "1d",
+                5,
+                "raw",
+                "execution_reference",
+                "EXECUTION_REFERENCE_V1",
+                list(
+                    ResearchDataRequirementProfile.get(
+                        "EXECUTION_REFERENCE_V1"
+                    ).required_fields
+                ),
+            )
+            if klines:
+                snap = build_snapshot_from_kline(code, klines)
+                if snap:
+                    return snap
+        except Exception as exc:
+            logger.warning("simulation_kline_failed", code=code, error=str(exc))
+        return None
+
     async def submit_order(self, request: OrderRequest) -> OrderResult:
         order_id = str(uuid.uuid4())
-        quote = await self.data.get_quote(request.stock_code)
-        if quote is None:
-            return OrderResult(order_id=order_id, status="FAILED", message="无法获取行情")
+        code = str(request.stock_code).zfill(6)
+        logger.info(
+            "simulation_submit_start",
+            order_id=order_id,
+            stock_code=code,
+            side=request.side,
+            quantity=request.quantity,
+            order_type=request.order_type,
+            limit_price=request.limit_price,
+        )
 
-        current_price = float(quote["price"])
-        prev_close = float(quote.get("prev_close") or current_price)
-        limit_up = float(quote.get("limit_up") or prev_close * 1.10)
-        limit_down = float(quote.get("limit_down") or prev_close * 0.90)
+        await self._maybe_release_t1()
 
-        if request.side == "BUY" and current_price >= limit_up * 0.999:
-            return OrderResult(order_id=order_id, status="FAILED", message="涨停板，无法买入")
-        if request.side == "SELL" and current_price <= limit_down * 1.001:
-            return OrderResult(order_id=order_id, status="FAILED", message="跌停板，无法卖出")
-
-        if request.order_type == "MARKET":
-            fill_price = (
-                min(current_price * (1 + self.SLIPPAGE_RATE), limit_up)
-                if request.side == "BUY"
-                else max(current_price * (1 - self.SLIPPAGE_RATE), limit_down)
+        # —— 交易时段 ——
+        allow_off = bool(getattr(settings, "SIM_ALLOW_OFF_HOURS", True))
+        in_session = is_order_accept_time()
+        if not in_session and not allow_off:
+            return OrderResult(
+                order_id=order_id,
+                status="FAILED",
+                message="非 A 股交易时段（工作日 09:15-11:30、13:00-15:00，北京时间）",
             )
-        else:
-            if request.limit_price is None:
-                return OrderResult(order_id=order_id, status="FAILED", message="限价单缺少价格")
-            if request.side == "BUY" and current_price > request.limit_price:
-                return OrderResult(order_id=order_id, status="SUBMITTED", message="限价单等待成交")
-            if request.side == "SELL" and current_price < request.limit_price:
-                return OrderResult(order_id=order_id, status="SUBMITTED", message="限价单等待成交")
-            fill_price = request.limit_price
 
+        # —— 手数 ——
+        lot_err = validate_lot(code, int(request.quantity), request.side)
+        # 卖出清仓允许零股：若持仓不足一手
+        if lot_err and request.side == "SELL":
+            pos = await self._get_position(code)
+            if pos and pos.available_qty == request.quantity and request.quantity % 100 != 0:
+                lot_err = None
+        if lot_err:
+            return OrderResult(order_id=order_id, status="FAILED", message=lot_err)
+
+        # 限价自动规范到 0.01 元
+        if request.order_type == "LIMIT" and request.limit_price is not None:
+            from app.trade.ashare_rules import normalize_limit_price
+
+            request.limit_price = normalize_limit_price(float(request.limit_price))
+            pe = validate_price_tick(request.limit_price)
+            if pe:
+                return OrderResult(order_id=order_id, status="FAILED", message=pe)
+
+        # —— 真实行情 ——
+        snap = await self._resolve_market(code)
+        if snap is None:
+            return OrderResult(
+                order_id=order_id,
+                status="FAILED",
+                message="无法获取真实行情，请检查 a-stock-data 或网络后重试",
+            )
+
+        logger.info(
+            "simulation_price_resolved",
+            order_id=order_id,
+            stock_code=code,
+            price=snap.price,
+            prev_close=snap.prev_close,
+            limit_up=snap.limit_up,
+            limit_down=snap.limit_down,
+            source=snap.source,
+            in_session=in_session,
+            continuous=is_continuous_auction(),
+        )
+
+        board_err = check_limit_board(request.side, snap)
+        if board_err:
+            return OrderResult(order_id=order_id, status="FAILED", message=board_err)
+
+        fill_price, fill_note, fill_status = resolve_fill_price(
+            request.side,
+            request.order_type,
+            float(request.limit_price) if request.limit_price is not None else None,
+            snap,
+        )
+        if fill_status == "FAILED":
+            return OrderResult(
+                order_id=order_id,
+                status="FAILED",
+                message=fill_note or "无法成交",
+            )
+        if fill_status == "SUBMITTED":
+            await self._insert_pending_order(order_id, request, code)
+            return OrderResult(
+                order_id=order_id,
+                status="SUBMITTED",
+                message=fill_note or "限价单已挂出，等待触及成交",
+            )
+
+        assert fill_price is not None
         amount = fill_price * request.quantity
-        commission = max(amount * self.COMMISSION_RATE, self.MIN_COMMISSION)
-        stamp_tax = amount * self.STAMP_TAX_RATE if request.side == "SELL" else 0.0
-        total_cost = amount + commission + stamp_tax
+        commission, stamp_tax, _ = fees(request.side, amount)
+        total_buy_cost = amount + commission
 
         if request.side == "BUY":
             account = await self.get_account_info()
-            if account.cash < total_cost:
+            if account.cash < total_buy_cost:
                 return OrderResult(
                     order_id=order_id,
                     status="FAILED",
-                    message=f"资金不足，需要¥{total_cost:.2f}，可用¥{account.cash:.2f}",
+                    message=f"资金不足：需要¥{total_buy_cost:.2f}，可用¥{account.cash:.2f}",
                 )
         else:
-            position = await self._get_position(request.stock_code)
+            position = await self._get_position(code)
             available = position.available_qty if position else 0
             if available < request.quantity:
                 return OrderResult(
                     order_id=order_id,
                     status="FAILED",
-                    message=f"可卖数量不足，需要{request.quantity}股，可用{available}股",
+                    message=(
+                        f"可卖数量不足（T+1）：需要 {request.quantity} 股，可卖 {available} 股。"
+                        "当日买入次一交易日才可卖出。"
+                    ),
                 )
 
         signal_id = request.signal_id or "manual"
-        idempotency_key = f"{signal_id}:{request.stock_code}:{request.side}:{request.quantity}"
+        idempotency_key = build_idempotency_key(
+            mode=self.mode,
+            signal_id=signal_id,
+            stock_code=code,
+            side=request.side,
+            quantity=request.quantity,
+            order_type=request.order_type,
+            limit_price=request.limit_price,
+        )
 
         await self._execute_fill_transaction(
             order_id=order_id,
             request=request,
+            stock_code=code,
             idempotency_key=idempotency_key,
             fill_price=fill_price,
             quantity=request.quantity,
@@ -96,16 +252,102 @@ class SimulationTrader(BaseTrader):
             amount=amount,
         )
 
+        src_note = "真实行情" if snap.source == "quote" else "日K收盘(行情暂不可用)"
+        session_note = "" if in_session else "；非交易时段按最近行情模拟"
+        note_extra = f"；{fill_note}" if fill_note else ""
+        logger.info(
+            "simulation_submit_filled",
+            order_id=order_id,
+            stock_code=code,
+            side=request.side,
+            quantity=request.quantity,
+            fill_price=fill_price,
+            commission=commission,
+            stamp_tax=stamp_tax,
+            price_source=snap.source,
+        )
         return OrderResult(
             order_id=order_id,
             status="FILLED",
-            message=f"模拟成交：{request.side} {request.quantity}股 @{fill_price:.2f}",
+            message=(
+                f"模拟成交[{src_note}]：{request.side} {request.quantity}股 "
+                f"@{fill_price:.2f} 佣金¥{commission:.2f}"
+                f"{' 印花税¥' + f'{stamp_tax:.2f}' if stamp_tax else ''}"
+                f"{session_note}{note_extra}"
+            ),
+        )
+
+    async def _insert_pending_order(
+        self, order_id: str, request: OrderRequest, code: str
+    ) -> None:
+        signal_id = request.signal_id or "manual"
+        idempotency_key = build_idempotency_key(
+            mode=self.mode,
+            signal_id=signal_id,
+            stock_code=code,
+            side=request.side,
+            quantity=request.quantity,
+            order_type=request.order_type,
+            limit_price=request.limit_price,
+        )
+        await self.db.execute(
+            text(
+                """
+                INSERT INTO trade.orders
+                (id, idempotency_key, stock_code, signal_id, strategy_id,
+                 side, order_type, quantity, limit_price, filled_quantity,
+                 avg_fill_price, commission, status, mode,
+                 trigger_source, operator, order_source, order_reason, caller,
+                 approval_status, approval_id, risk_check_id, data_certification_status,
+                 created_by, created_from_task, submitted_at)
+                VALUES
+                (:id, :idempotency_key, :stock_code, NULLIF(:signal_id, 'manual')::uuid,
+                 :strategy_id, :side, :order_type, :quantity, :limit_price, 0,
+                 NULL, 0, 'SUBMITTED', :mode,
+                 :trigger_source, :operator, :order_source, :order_reason, :caller,
+                 :approval_status, :approval_id, :risk_check_id, :data_certification_status,
+                 :created_by, :created_from_task, NOW())
+                """
+            ),
+            {
+                "id": order_id,
+                "idempotency_key": idempotency_key,
+                "stock_code": code,
+                "signal_id": signal_id,
+                "strategy_id": request.strategy_id,
+                "side": request.side,
+                "order_type": request.order_type,
+                "quantity": request.quantity,
+                "limit_price": request.limit_price,
+                "mode": self.mode,
+                "trigger_source": request.trigger_source,
+                "operator": request.operator,
+                "order_source": request.trigger_source,
+                "order_reason": request.order_reason,
+                "caller": request.caller,
+                "approval_status": request.approval_status,
+                "approval_id": request.approval_id,
+                "risk_check_id": request.risk_check_id,
+                "data_certification_status": request.data_certification_status,
+                "created_by": request.operator,
+                "created_from_task": request.created_from_task,
+            },
+        )
+        await self.db.execute(
+            text(
+                """
+                INSERT INTO trade.order_history (order_id, from_status, to_status, changed_by)
+                VALUES (:order_id, 'PENDING', 'SUBMITTED', 'simulation_engine')
+                """
+            ),
+            {"order_id": order_id},
         )
 
     async def _execute_fill_transaction(
         self,
         order_id: str,
         request: OrderRequest,
+        stock_code: str,
         idempotency_key: str,
         fill_price: float,
         quantity: int,
@@ -120,18 +362,22 @@ class SimulationTrader(BaseTrader):
                 (id, idempotency_key, stock_code, signal_id, strategy_id,
                  side, order_type, quantity, limit_price, filled_quantity,
                  avg_fill_price, commission, status, mode,
-                 trigger_source, operator, submitted_at, filled_at)
+                 trigger_source, operator, order_source, order_reason, caller,
+                 approval_status, approval_id, risk_check_id, data_certification_status,
+                 created_by, created_from_task, submitted_at, filled_at)
                 VALUES
                 (:id, :idempotency_key, :stock_code, NULLIF(:signal_id, 'manual')::uuid,
                  :strategy_id, :side, :order_type, :quantity, :limit_price, :filled_quantity,
                  :avg_fill_price, :commission, 'FILLED', :mode,
-                 :trigger_source, :operator, NOW(), NOW())
+                 :trigger_source, :operator, :order_source, :order_reason, :caller,
+                 :approval_status, :approval_id, :risk_check_id, :data_certification_status,
+                 :created_by, :created_from_task, NOW(), NOW())
                 """
             ),
             {
                 "id": order_id,
                 "idempotency_key": idempotency_key,
-                "stock_code": request.stock_code,
+                "stock_code": stock_code,
                 "signal_id": request.signal_id or "manual",
                 "strategy_id": request.strategy_id,
                 "side": request.side,
@@ -140,43 +386,57 @@ class SimulationTrader(BaseTrader):
                 "limit_price": request.limit_price,
                 "filled_quantity": quantity,
                 "avg_fill_price": fill_price,
-                "commission": commission,
+                "commission": commission + stamp_tax,
                 "mode": self.mode,
                 "trigger_source": request.trigger_source,
                 "operator": request.operator,
+                "order_source": request.trigger_source,
+                "order_reason": request.order_reason,
+                "caller": request.caller,
+                "approval_status": request.approval_status,
+                "approval_id": request.approval_id,
+                "risk_check_id": request.risk_check_id,
+                "data_certification_status": request.data_certification_status,
+                "created_by": request.operator,
+                "created_from_task": request.created_from_task,
             },
         )
 
         if request.side == "BUY":
-            await self._update_position_buy(request.stock_code, quantity, fill_price, amount)
+            await self._update_position_buy(stock_code, quantity, fill_price, amount)
             await self.db.execute(
                 text(
                     """
                     UPDATE trade.account_records
-                    SET cash = cash - :cost,
-                        market_value = market_value + :amount,
-                        record_time = NOW()
-                    WHERE mode = :mode
+                    SET cash = cash - :cost, record_time = NOW()
+                    WHERE id = (
+                        SELECT id FROM trade.account_records
+                        WHERE mode = :mode
+                        ORDER BY record_time DESC LIMIT 1
+                    )
                     """
                 ),
-                {"cost": amount + commission, "amount": amount, "mode": self.mode},
+                {"cost": amount + commission, "mode": self.mode},
             )
         else:
-            await self._update_position_sell(request.stock_code, quantity, fill_price)
+            await self._update_position_sell(stock_code, quantity, fill_price)
             net_proceeds = amount - commission - stamp_tax
             await self.db.execute(
                 text(
                     """
                     UPDATE trade.account_records
-                    SET cash = cash + :proceeds,
-                        market_value = market_value - :amount,
-                        record_time = NOW()
-                    WHERE mode = :mode
+                    SET cash = cash + :proceeds, record_time = NOW()
+                    WHERE id = (
+                        SELECT id FROM trade.account_records
+                        WHERE mode = :mode
+                        ORDER BY record_time DESC LIMIT 1
+                    )
                     """
                 ),
-                {"proceeds": net_proceeds, "amount": amount, "mode": self.mode},
+                {"proceeds": net_proceeds, "mode": self.mode},
             )
 
+        await recompute_account_assets(self.db, self.mode)
         await self.db.execute(
             text(
                 """
@@ -194,6 +454,7 @@ class SimulationTrader(BaseTrader):
         if existing:
             new_qty = existing.total_qty + quantity
             new_cost = (existing.total_qty * existing.avg_cost + amount) / new_qty
+            # T+1：当日新买不可卖，available 保持原可卖
             await self.db.execute(
                 text(
                     """
@@ -268,7 +529,7 @@ class SimulationTrader(BaseTrader):
                 ),
                 {
                     "total_qty": new_qty,
-                    "available_qty": new_available,
+                    "available_qty": max(new_available, 0),
                     "realized_pnl": realized_pnl,
                     "price": fill_price,
                     "code": stock_code,
@@ -326,6 +587,7 @@ class SimulationTrader(BaseTrader):
         )
 
     async def get_positions(self) -> list[Position]:
+        await self._maybe_release_t1()
         result = await self.db.execute(
             text("SELECT * FROM trade.positions WHERE mode = :mode"),
             {"mode": self.mode},
@@ -369,17 +631,17 @@ class SimulationTrader(BaseTrader):
         )
 
     async def sync_positions(self) -> None:
+        """用真实行情刷新持仓市值。"""
+        await self._maybe_release_t1()
         positions = await self.get_positions()
         for pos in positions:
-            quote = await self.data.get_quote(pos.stock_code)
-            if not quote:
+            snap = await self._resolve_market(pos.stock_code)
+            if not snap:
                 continue
-            price = float(quote["price"])
+            price = snap.price
             market_value = price * pos.total_qty
             unrealized_pnl = (price - pos.avg_cost) * pos.total_qty
-            unrealized_pnl_pct = (
-                (price / pos.avg_cost - 1) * 100 if pos.avg_cost > 0 else 0
-            )
+            unrealized_pnl_pct = (price / pos.avg_cost - 1) * 100 if pos.avg_cost > 0 else 0
             await self.db.execute(
                 text(
                     """
@@ -401,3 +663,4 @@ class SimulationTrader(BaseTrader):
                     "mode": self.mode,
                 },
             )
+        await recompute_account_assets(self.db, self.mode)

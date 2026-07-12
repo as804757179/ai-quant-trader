@@ -2,21 +2,27 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
+from app.core.logging import FEATURE_WS, get_logger
 from app.ws.manager import ws_manager
 
+logger = get_logger(__name__, feature=FEATURE_WS)
 router = APIRouter()
 
 
 async def _serve_channel(websocket: WebSocket, channel: str) -> None:
+    logger.info("ws_connect", channel=channel)
     await ws_manager.connect(websocket, channel)
     try:
         while True:
             data = await websocket.receive_text()
             await ws_manager.handle_client_message(websocket, data)
     except WebSocketDisconnect:
-        pass
+        logger.info("ws_disconnect", channel=channel, reason="client_closed")
+    except Exception as exc:
+        logger.warning("ws_error", channel=channel, error=str(exc))
     finally:
         await ws_manager.disconnect(websocket)
+        logger.debug("ws_cleanup", channel=channel)
 
 
 @router.websocket("/quotes/{stock_code}")

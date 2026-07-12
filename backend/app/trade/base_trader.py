@@ -12,8 +12,15 @@ class OrderRequest:
     limit_price: float | None = None
     signal_id: str | None = None
     strategy_id: int | None = None
-    trigger_source: str = "manual"
+    trigger_source: str = "manual_order"
     operator: str | None = None
+    order_reason: str | None = None
+    caller: str | None = None
+    approval_id: str | None = None
+    approval_status: str = "pending"
+    risk_check_id: str | None = None
+    data_certification_status: str = "not_applicable"
+    created_from_task: bool = False
 
 
 @dataclass

@@ -356,7 +356,7 @@ def upgrade() -> None:
     op.execute("""
         CREATE TABLE IF NOT EXISTS trade.orders (
             id              UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
-            idempotency_key VARCHAR(64)     UNIQUE NOT NULL,
+            idempotency_key VARCHAR(64)     NOT NULL,
             stock_code      VARCHAR(10)     NOT NULL REFERENCES fundamental.stocks(code),
             signal_id       UUID            REFERENCES ai.signals(id),
             strategy_id     INT,
@@ -383,6 +383,10 @@ def upgrade() -> None:
             reject_reason   TEXT
         )
     """)
+    op.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_orders_mode_idempotency "
+        "ON trade.orders (mode, idempotency_key)"
+    )
     op.execute(
         "CREATE INDEX IF NOT EXISTS idx_orders_stock "
         "ON trade.orders(stock_code, created_at DESC)"

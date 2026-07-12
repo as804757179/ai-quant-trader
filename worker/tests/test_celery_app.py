@@ -48,12 +48,12 @@ def test_tasks_registered() -> None:
 
 
 def test_run_signal_scan_task_callable() -> None:
-    from unittest.mock import patch
+    from unittest.mock import AsyncMock, MagicMock, patch
 
-    with patch(
-        "asyncio.run",
-        return_value={"stocks_scanned": 0, "signals_generated": 0, "latency_ms": 0},
-    ):
+    service = MagicMock()
+    service.scan_all = AsyncMock(return_value={"stocks_scanned": 0, "signals_generated": 0})
+    service.close = AsyncMock()
+    with patch("services.signal_scan.SignalScanService", return_value=service):
         task = app.tasks["tasks.run_signal_scan"]
         result = task.run()
 

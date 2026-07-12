@@ -16,7 +16,8 @@ CREATE SCHEMA IF NOT EXISTS audit;
 
 ALTER DATABASE quant_trader SET search_path TO public, market, fundamental, ai, strategy, backtest, trade, risk, audit;
 
-CREATE USER quant_readonly WITH PASSWORD 'readonly_password';
+-- 生产请通过环境变量/密钥管理覆盖该只读账号密码
+CREATE USER quant_readonly WITH PASSWORD 'CHANGE_ME_READONLY_PASSWORD';
 GRANT CONNECT ON DATABASE quant_trader TO quant_readonly;
 GRANT USAGE ON SCHEMA market, fundamental, ai, strategy, backtest, trade, risk TO quant_readonly;
 GRANT SELECT ON ALL TABLES IN SCHEMA market TO quant_readonly;

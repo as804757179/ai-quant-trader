@@ -5,12 +5,12 @@ import json
 from datetime import datetime
 from typing import Any
 
-import structlog
 from sqlalchemy import text
 
 from app.ai.orchestrator import AgentOrchestrator
 from app.ai.schemas import AgentResult
 from app.core.config import settings
+from app.core.logging import FEATURE_AI, get_logger
 from app.data.service import DataService
 from app.db import get_db
 from app.schemas.ai import (
@@ -23,7 +23,7 @@ from app.schemas.ai import (
     SignalPayload,
 )
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__, feature=FEATURE_AI)
 
 
 class AnalysisError(Exception):
@@ -100,11 +100,20 @@ class AIService:
             )
             raise AnalysisError(f"AI 分析失败: {exc}", 503) from exc
 
+        historical_data_status = context.get("historical_data_status") or "unknown"
+        if historical_data_status != "certified":
+            signal = result["signal"]
+            signal["action"] = "HOLD"
+            signal["confidence"] = 0.0
+            signal["reason"] = "当前历史数据未认证，仅可用于展示，不可用于交易判断。"
+            signal["historical_data_status"] = historical_data_status
+
         signal_id = await self._save_signal(
             code=code,
             result=result,
             strategy_id=strategy_id,
             data_quality_score=context.get("data_quality_score"),
+            historical_data_status=historical_data_status,
         )
 
         response = self._build_response(
@@ -112,6 +121,7 @@ class AIService:
             result=result,
             signal_id=signal_id,
             data_quality_score=context.get("data_quality_score"),
+            historical_data_status=historical_data_status,
         )
         logger.info(
             "ai_analyze_done",
@@ -155,14 +165,25 @@ class AIService:
 
         scores = raw_output.get("scores") or {}
         agent_results = self._agent_votes_to_summaries(agent_votes)
+        historical_data_status = raw_output.get("historical_data_status") or "unknown"
+        warning = None
+        action = record["action"]
+        confidence = float(record["confidence"])
+        reason = record["reason"]
+        if historical_data_status != "certified":
+            action = "HOLD"
+            confidence = 0.0
+            reason = "当前历史数据未认证，仅可用于展示，不可用于交易判断。"
+            warning = reason
+
         signal = SignalPayload(
             id=str(record["id"]),
-            action=record["action"],
-            confidence=float(record["confidence"]),
+            action=action,
+            confidence=confidence,
             raw_confidence=raw_output.get("raw_confidence"),
             risk_level=record["risk_level"],
             price_at=float(record["price_at"]) if record.get("price_at") else None,
-            reason=record["reason"],
+            reason=reason,
             scores=scores,
             degraded_agents=raw_output.get("degraded_agents") or [],
             signal_time=record["signal_time"].isoformat()
@@ -176,13 +197,17 @@ class AIService:
             code=code,
             signal=signal,
             scores=scores,
-            reason=record["reason"],
+            reason=reason,
             agent_results=agent_results,
             agent_statuses=raw_output.get("agent_statuses") or {},
             latency_ms=raw_output.get("latency_ms", 0),
             from_cache=True,
             signal_id=str(record["id"]),
             data_quality_score=raw_output.get("data_quality_score"),
+            historical_data_status=historical_data_status,
+            tradable=historical_data_status == "certified",
+            order_created=False,
+            warning=warning,
         )
 
     async def _save_signal(
@@ -191,6 +216,7 @@ class AIService:
         result: dict[str, Any],
         strategy_id: int | None,
         data_quality_score: float | None,
+        historical_data_status: str = "unknown",
     ) -> str:
         signal = result["signal"]
         agent_results: dict[str, AgentResult] = result.get("agent_results", {})
@@ -204,6 +230,7 @@ class AIService:
             "agent_statuses": result.get("agent_statuses", {}),
             "latency_ms": result.get("latency_ms", 0),
             "data_quality_score": data_quality_score,
+            "historical_data_status": historical_data_status,
         }
 
         signal_id = signal.get("id")
@@ -288,6 +315,7 @@ class AIService:
         result: dict[str, Any],
         signal_id: str,
         data_quality_score: float | None,
+        historical_data_status: str = "unknown",
     ) -> AnalyzeResponseData:
         signal_data = result["signal"]
         agent_results_raw: dict[str, AgentResult] = result.get("agent_results", {})
@@ -317,6 +345,9 @@ class AIService:
             signal_time=signal_data.get("signal_time"),
             valid_until=signal_data.get("valid_until"),
         )
+        warning = None
+        if historical_data_status != "certified":
+            warning = "当前历史数据未认证，仅可用于展示，不可用于交易判断。"
         return AnalyzeResponseData(
             code=code,
             signal=signal,
@@ -328,6 +359,10 @@ class AIService:
             from_cache=False,
             signal_id=signal_id,
             data_quality_score=data_quality_score,
+            historical_data_status=historical_data_status,
+            tradable=historical_data_status == "certified",
+            order_created=False,
+            warning=warning,
         )
 
     @staticmethod
@@ -418,10 +453,10 @@ class AIService:
                     """
                     SELECT COUNT(*) AS cnt FROM ai.signals
                     WHERE stock_code = :code
-                      AND signal_time >= NOW() - (:days || ' days')::interval
+                      AND signal_time >= NOW() - make_interval(days => :days)
                     """
                 ),
-                {"code": code, "days": days},
+                {"code": code, "days": int(days)},
             )
             total = int(count_row.scalar() or 0)
             rows = await db.execute(
@@ -432,11 +467,11 @@ class AIService:
                            executed_at, executed_price, pnl, pnl_pct, raw_agent_output
                     FROM ai.signals
                     WHERE stock_code = :code
-                      AND signal_time >= NOW() - (:days || ' days')::interval
+                      AND signal_time >= NOW() - make_interval(days => :days)
                     ORDER BY signal_time DESC
                     """
                 ),
-                {"code": code, "days": days},
+                {"code": code, "days": int(days)},
             )
             records = rows.mappings().all()
 

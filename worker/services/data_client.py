@@ -56,6 +56,34 @@ class DataClient:
     async def fetch_quote(self, code: str) -> dict | None:
         return await self._request("GET", f"/quote/{code}")
 
+    async def fetch_fund_flow(self, code: str, days: int = 5) -> list | None:
+        data = await self._request(
+            "GET", f"/fund_flow/{code}", params={"days": days}
+        )
+        if data is None:
+            return None
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            return data.get("items") or data.get("data") or [data]
+        return None
+
+    async def fetch_kline(
+        self, code: str, period: str = "1d", limit: int = 200
+    ) -> list | None:
+        data = await self._request(
+            "GET",
+            f"/kline/{code}",
+            params={"period": period, "limit": limit},
+        )
+        if data is None:
+            return None
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            return data.get("items") or data.get("data")
+        return None
+
 
 def validate_quote(data: dict | None) -> bool:
     if not data:

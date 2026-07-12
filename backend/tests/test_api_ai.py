@@ -335,7 +335,12 @@ def test_full_analyze_pipeline_with_mocks() -> None:
     async def _run() -> None:
         mock_data = MagicMock()
         mock_data.get_full_context = AsyncMock(
-            return_value={"code": "000001", "price": 10.5, "data_quality_score": 85.0}
+            return_value={
+                "code": "000001",
+                "price": 10.5,
+                "data_quality_score": 85.0,
+                "historical_data_status": "uncertified",
+            }
         )
         mock_data.close = AsyncMock()
 
@@ -349,10 +354,64 @@ def test_full_analyze_pipeline_with_mocks() -> None:
         ):
             result = await svc.analyze("000001", force_refresh=True)
 
-        assert result.signal.action == "BUY"
+        assert result.signal.action == "HOLD"
+        assert result.tradable is False
+        assert result.order_created is False
+        assert "当前历史数据未认证，仅可用于展示，不可用于交易判断" in result.warning
         assert result.signal_id == "saved-signal-id"
         assert result.data_quality_score == 85.0
         mock_orch.run.assert_awaited_once()
+
+    asyncio.run(_run())
+
+
+def test_certified_context_preserves_analysis_but_never_creates_order() -> None:
+    svc = AIService(data_service=MagicMock(), orchestrator=MagicMock())
+    result = svc._build_response(
+        code="000001",
+        result=_sample_orchestrator_result(),
+        signal_id="certified-signal-id",
+        data_quality_score=100.0,
+        historical_data_status="certified",
+    )
+    assert result.signal.action == "BUY"
+    assert result.tradable is True
+    assert result.order_created is False
+    assert result.warning is None
+
+
+def test_legacy_cached_signal_without_certification_is_forced_hold() -> None:
+    async def _run() -> None:
+        record = {
+            "id": "33333333-3333-3333-3333-333333333333",
+            "stock_code": "000001",
+            "action": "BUY",
+            "confidence": 0.9,
+            "risk_level": "LOW",
+            "price_at": 10.0,
+            "reason": "legacy buy",
+            "agent_votes": {},
+            "raw_agent_output": {},
+            "signal_time": None,
+            "valid_until": None,
+        }
+        query_result = MagicMock()
+        query_result.mappings.return_value.first.return_value = record
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=query_result)
+        db_cm = MagicMock()
+        db_cm.__aenter__ = AsyncMock(return_value=db)
+        db_cm.__aexit__ = AsyncMock(return_value=None)
+        svc = AIService(data_service=MagicMock(), orchestrator=MagicMock())
+
+        with patch("app.services.ai_service.get_db", return_value=db_cm):
+            result = await svc.get_valid_signal("000001")
+
+        assert result is not None
+        assert result.signal.action == "HOLD"
+        assert result.tradable is False
+        assert result.order_created is False
+        assert "当前历史数据未认证" in result.warning
 
     asyncio.run(_run())
 

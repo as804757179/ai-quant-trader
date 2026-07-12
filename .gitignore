@@ -1,9 +1,41 @@
+# 密钥与本地配置
 .env
 .env.*
+!.env.example
+*.pem
+*.key
+
+# Python
 __pycache__/
 *.pyc
 .venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Node
 node_modules/
-vector_db/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# 日志和缓存
+logs/
 *.log
+cache/
+tmp/
+
+# 数据库与大型数据
+*.db
+*.sqlite
+*.sql
+data/
+datasets/
+backups/
+
+# 系统文件
 .DS_Store
+Thumbs.db

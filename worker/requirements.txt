@@ -1,6 +1,6 @@
 celery==5.3.6
 redis[hiredis]==5.0.1
-redbeat==2.2.0
+celery-redbeat==2.2.0
 sqlalchemy[asyncio]==2.0.25
 asyncpg==0.29.0
 psycopg2-binary==2.9.9

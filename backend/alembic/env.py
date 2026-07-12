@@ -15,7 +15,8 @@ def get_database_url() -> str:
         "DATABASE_URL",
         "postgresql+asyncpg://quant_admin:password@postgres:5432/quant_trader",
     )
-    return url.replace("+asyncpg", "+psycopg2")
+    # ConfigParser 把 % 当插值，密码 URL 编码后的 %23 等必须写成 %%
+    return url.replace("+asyncpg", "+psycopg2").replace("%", "%%")
 
 
 config.set_main_option("sqlalchemy.url", get_database_url())

@@ -2,16 +2,26 @@ from __future__ import annotations
 
 from typing import Any
 
+# 预设尽量依赖 stocks + klines 可算出的因子，避免无财务/AI 数据时永远空结果
 PRESET_DEFINITIONS: dict[str, dict[str, Any]] = {
+    "all_active": {
+        "id": "all_active",
+        "name": "全部（有行情/K线优先）",
+        "description": "不过滤条件，返回股票池全部（按成交额排序）",
+        "conditions": {
+            "filters": [],
+            "sort_by": "amount",
+            "sort_order": "desc",
+        },
+    },
     "ai_momentum": {
         "id": "ai_momentum",
-        "name": "AI动量",
-        "description": "近期涨幅 + 成交量放大 + AI 信号偏多",
+        "name": "动量偏强",
+        "description": "日涨跌幅≥0 且量比≥0.8",
         "conditions": {
             "filters": [
-                {"field": "change_pct", "op": "gte", "value": 2.0},
-                {"field": "volume_ratio", "op": "gte", "value": 1.2},
-                {"field": "ai_confidence", "op": "gte", "value": 0.6},
+                {"field": "change_pct", "op": "gte", "value": 0.0},
+                {"field": "volume_ratio", "op": "gte", "value": 0.8},
             ],
             "sort_by": "change_pct",
             "sort_order": "desc",
@@ -19,27 +29,24 @@ PRESET_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
     "value_rebound": {
         "id": "value_rebound",
-        "name": "低估回弹",
-        "description": "低 PB + 近期超跌 + 资金净流入",
+        "name": "近端回调",
+        "description": "近 5 日收益相对偏低（便于找超跌）",
         "conditions": {
             "filters": [
-                {"field": "pb_ratio", "op": "lte", "value": 2.5},
-                {"field": "recent_return_5d", "op": "lte", "value": -3.0},
-                {"field": "main_net_in_5d", "op": "gt", "value": 0},
+                {"field": "recent_return_5d", "op": "lte", "value": 5.0},
             ],
-            "sort_by": "main_net_in_5d",
-            "sort_order": "desc",
+            "sort_by": "recent_return_5d",
+            "sort_order": "asc",
         },
     },
     "sector_leader": {
         "id": "sector_leader",
         "name": "行业龙头",
-        "description": "行业内成交额排名靠前 + 基本面较好",
+        "description": "行业内成交额排名前 50%",
         "conditions": {
             "preset_handler": "sector_leader",
             "filters": [
-                {"field": "sector_rank_pct", "op": "lte", "value": 0.2},
-                {"field": "roe", "op": "gte", "value": 8.0},
+                {"field": "sector_rank_pct", "op": "lte", "value": 0.5},
             ],
             "sort_by": "amount",
             "sort_order": "desc",
