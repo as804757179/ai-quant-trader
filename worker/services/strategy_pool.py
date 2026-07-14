@@ -6,6 +6,7 @@ from typing import Any
 import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from services.stock_pool import get_active_stock_codes
 
@@ -19,7 +20,7 @@ def _get_session_factory() -> async_sessionmaker[AsyncSession]:
     global _engine, _session_factory
     if _session_factory is None:
         database_url = os.getenv("DATABASE_URL", "")
-        _engine = create_async_engine(database_url, pool_pre_ping=True)
+        _engine = create_async_engine(database_url, poolclass=NullPool)
         _session_factory = async_sessionmaker(_engine, expire_on_commit=False)
     return _session_factory
 

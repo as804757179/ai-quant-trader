@@ -3,8 +3,12 @@ import os
 import tempfile
 from typing import Any
 
-import chromadb
 import pytest
+
+try:
+    import chromadb
+except ImportError:
+    chromadb = None
 
 os.environ.setdefault("SECRET_KEY", "test-secret-key-min-32-characters-long")
 os.environ.setdefault(
@@ -27,6 +31,8 @@ class _FakeEmbeddingProvider:
 
 @pytest.fixture
 def rag_engine(tmp_path: Any) -> RAGEngine:
+    if chromadb is None:
+        pytest.skip("chromadb is unavailable on this Python runtime")
     client = chromadb.EphemeralClient()
     engine = RAGEngine(
         persist_dir=str(tmp_path),

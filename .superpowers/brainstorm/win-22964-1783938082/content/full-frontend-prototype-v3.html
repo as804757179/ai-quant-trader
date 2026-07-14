@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>量化运营台 - 完整交互原型</title>
+  <style>
+    :root {
+      --bg: #07111f;
+      --panel: #0f1d30;
+      --panel-2: #122238;
+      --line: #203450;
+      --line-soft: rgba(104, 145, 194, .16);
+      --text: #e8f0fb;
+      --muted: #8293aa;
+      --blue: #1684ff;
+      --blue-2: #0f6be8;
+      --green: #31d47b;
+      --red: #ff5c63;
+      --orange: #f7a51a;
+      --purple: #8b5cf6;
+      --shadow: 0 18px 50px rgba(0, 0, 0, .28);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: Inter, "Microsoft YaHei", "PingFang SC", sans-serif; }
+    body {
+      background:
+        radial-gradient(circle at 78% 0%, rgba(16, 92, 177, .16), transparent 30%),
+        linear-gradient(135deg, #06101d 0%, #07111f 48%, #081525 100%);
+    }
+    button, select { font: inherit; }
+    .app { display: flex; min-height: 100vh; padding: 8px; gap: 14px; }
+    .sidebar {
+      width: 274px; flex: 0 0 274px; border: 1px solid #162a43; border-radius: 14px;
+      background: linear-gradient(180deg, rgba(13, 29, 49, .98), rgba(8, 22, 38, .98));
+      box-shadow: var(--shadow); overflow: hidden; transition: width .25s, flex-basis .25s;
+      position: sticky; top: 8px; height: calc(100vh - 16px); display: flex; flex-direction: column;
+    }
+    .sidebar.collapsed { width: 78px; flex-basis: 78px; }
+    .brand { display: flex; align-items: center; gap: 13px; padding: 24px 20px 20px; min-height: 92px; }
+    .logo {
+      width: 42px; height: 42px; flex: 0 0 42px; border: 2px solid var(--blue); border-radius: 11px;
+      display: grid; place-items: center; color: var(--blue); background: rgba(22, 132, 255, .1);
+      font-size: 22px; box-shadow: 0 0 24px rgba(22, 132, 255, .18);
+    }
+    .brand-name { white-space: nowrap; overflow: hidden; }
+    .brand-name strong { display: block; font-size: 19px; letter-spacing: .5px; }
+    .brand-name small { display: block; color: #7f91aa; font-size: 11px; margin-top: 4px; letter-spacing: 1px; }
+    .collapse-btn {
+      position: absolute; top: 25px; right: -1px; width: 34px; height: 42px; border: 0; border-radius: 8px 0 0 8px;
+      background: #1a2b43; color: #bdc9d9; cursor: pointer; font-size: 20px;
+    }
+    .menu-scroll { flex: 1; overflow-y: auto; padding: 8px 12px 22px; scrollbar-width: thin; scrollbar-color: #29405f transparent; }
+    .menu-section { color: #6f829b; font-size: 12px; padding: 18px 14px 9px; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+    .menu-section:after { content: ""; height: 1px; background: #20324a; flex: 1; }
+    .menu-item {
+      display: flex; align-items: center; min-height: 46px; gap: 12px; padding: 9px 12px; margin: 3px 0;
+      border-radius: 8px; color: #aebdd0; cursor: pointer; user-select: none; transition: .18s;
+      white-space: nowrap; overflow: hidden; border: 1px solid transparent;
+    }
+    .menu-item:hover { background: rgba(22, 132, 255, .09); color: #ecf5ff; }
+    .menu-item.active {
+      background: linear-gradient(135deg, #1684ff, #0867ee); color: white; border-color: #2b92ff;
+      box-shadow: 0 8px 22px rgba(10, 110, 242, .28);
+    }
+    .menu-item .ico { width: 22px; flex: 0 0 22px; text-align: center; font-size: 16px; color: #8fa3bc; }
+    .menu-item.active .ico { color: white; }
+    .menu-item .label { flex: 1; overflow: hidden; }
+    .menu-item .chev { color: #61758f; transition: transform .2s; }
+    .menu-group.open > .menu-item .chev { transform: rotate(90deg); }
+    .submenu { display: none; margin: 2px 0 6px 17px; padding-left: 10px; border-left: 1px solid #223954; }
+    .menu-group.open > .submenu { display: block; }
+    .submenu .menu-item { min-height: 38px; padding: 7px 10px; font-size: 13px; }
+    .submenu .submenu { margin-left: 12px; }
+    .submenu .submenu .menu-item { color: #8498b1; font-size: 12px; min-height: 34px; }
+    .submenu .submenu .menu-item.active { color: white; }
+    .sidebar.collapsed .brand-name, .sidebar.collapsed .menu-section, .sidebar.collapsed .label,
+    .sidebar.collapsed .chev, .sidebar.collapsed .submenu { display: none !important; }
+    .sidebar.collapsed .brand { padding-left: 17px; }
+    .sidebar.collapsed .menu-item { justify-content: center; padding: 9px; }
+    .sidebar.collapsed .collapse-btn { transform: rotate(180deg); right: 9px; top: 72px; border-radius: 8px; }
+    .main { flex: 1; min-width: 0; padding-right: 2px; }
+    .shell {
+      min-height: calc(100vh - 16px); border: 1px solid #172d48; border-radius: 14px;
+      background: linear-gradient(145deg, rgba(15, 30, 49, .97), rgba(9, 22, 38, .98));
+      box-shadow: var(--shadow); padding: 26px 28px 24px;
+    }
+    .topbar { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; margin-bottom: 26px; }
+    .title-wrap h1 { margin: 0; font-size: 28px; letter-spacing: .5px; }
+    .title-wrap p { margin: 7px 0 0; color: var(--muted); font-size: 14px; }
+    .breadcrumb { color: #6f87a5; font-size: 12px; margin-bottom: 7px; }
+    .top-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+    .status-chip {
+      border: 1px solid var(--line-soft); background: #112541; color: #56a3ff; padding: 10px 15px; border-radius: 7px;
+      font-size: 13px; font-weight: 600; letter-spacing: .3px;
+    }
+    .status-chip.danger { color: #ff696e; background: rgba(130, 37, 51, .22); }
+    .status-chip.warn { color: #ffc23f; background: rgba(130, 87, 22, .2); }
+    .status-chip.proto { color: #b59cff; background: rgba(89, 56, 158, .2); }
+    .clock { display: flex; align-items: center; gap: 10px; color: #9baac0; padding: 0 8px; }
+    .clock-icon { width: 30px; height: 30px; border: 2px solid #31445d; border-radius: 50%; display: grid; place-items: center; }
+    .clock b { color: #bec9d8; font-size: 14px; display: block; }
+    .clock small { display: block; text-align: right; margin-top: 2px; }
+    .icon-btn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid #203652; background: transparent; color: #a9b7c9; cursor: pointer; font-size: 18px; }
+    .icon-btn:hover { background: #152941; color: white; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 16px; }
+    .metric, .panel {
+      border: 1px solid #213752; border-radius: 11px; background: linear-gradient(145deg, rgba(18, 36, 59, .86), rgba(12, 27, 46, .86));
+      box-shadow: inset 0 1px rgba(255,255,255,.015);
+    }
+    .metric { padding: 23px 21px; min-height: 148px; display: flex; justify-content: space-between; }
+    .metric h3 { margin: 0 0 14px; font-size: 15px; color: #d9e3ef; }
+    .metric strong { font-size: 25px; letter-spacing: .3px; }
+    .metric p { color: #778aa4; margin: 14px 0 0; font-size: 13px; }
+    .metric-icon { width: 52px; height: 52px; border-radius: 13px; display: grid; place-items: center; font-size: 22px; background: rgba(22,132,255,.18); color: #4b9aff; }
+    .metric-icon.green { background: rgba(49,212,123,.16); color: #54dc91; }
+    .metric-icon.orange { background: rgba(247,165,26,.15); color: var(--orange); }
+    .panel { margin-top: 17px; overflow: hidden; }
+    .panel-head { padding: 18px 20px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .panel-head h2, .panel-head h3 { margin: 0; font-size: 16px; }
+    .panel-head .hint { color: var(--muted); font-size: 12px; }
+    .panel-body { padding: 0 20px 20px; }
+    .flow-row { display: grid; grid-template-columns: 1fr 36px 1fr 36px 1fr 36px 1fr; align-items: center; padding: 14px 2px 25px; }
+    .flow-step { display: flex; align-items: center; gap: 12px; }
+    .step-no { width: 41px; height: 41px; border-radius: 50%; display: grid; place-items: center; background: #0e7efb; font-size: 21px; }
+    .step-no.purple { background: #7041db; } .step-no.green { background: #249650; } .step-no.orange { background: #c87906; }
+    .step-text b { display: block; font-size: 15px; } .step-text small { display: block; color: var(--muted); margin-top: 7px; }
+    .arrow { color: #53677f; font-size: 28px; text-align: center; }
+    .split-65 { display: grid; grid-template-columns: 1.6fr 1fr; }
+    .timeline { border-left: 1px solid #203550; padding-left: 18px; margin: 4px 0; }
+    .timeline-row { position: relative; display: flex; gap: 14px; margin: 16px 0; color: #c6d1df; }
+    .timeline-row:before { content: ""; position: absolute; left: -23px; top: 5px; width: 9px; height: 9px; border-radius: 50%; background: var(--orange); box-shadow: 0 0 0 4px rgba(247,165,26,.12); }
+    .timeline-row.ok:before { background: var(--green); box-shadow: 0 0 0 4px rgba(49,212,123,.12); }
+    .timeline-row time { color: #72849d; width: 42px; }
+    .two-col { display: grid; grid-template-columns: 1.1fr 1fr; gap: 17px; }
+    .table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .table th { background: rgba(20, 41, 67, .8); color: #788ca6; font-weight: 500; text-align: left; padding: 10px; }
+    .table td { padding: 12px 10px; border-bottom: 1px solid #1d324d; color: #d0dae7; }
+    .table tr:hover td { background: rgba(22,132,255,.04); }
+    .tag { display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 4px; font-size: 11px; background: #1a2c43; color: #a8b7c9; }
+    .tag.green { background: rgba(34, 143, 77, .26); color: #52dc8d; }
+    .tag.red { background: rgba(177, 55, 62, .25); color: #ff7479; }
+    .tag.orange { background: rgba(166, 106, 15, .25); color: #ffc34e; }
+    .tag.blue { background: rgba(22,132,255,.2); color: #5ba9ff; }
+    .chart-wrap { height: 200px; position: relative; padding: 5px 6px 0 36px; }
+    .chart-wrap svg { width: 100%; height: 100%; overflow: visible; }
+    .chart-axis { position: absolute; left: 0; color: #71839a; font-size: 10px; }
+    .services { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+    .service { border: 1px solid #213652; border-radius: 9px; padding: 13px; display: flex; gap: 11px; align-items: center; background: rgba(14,31,51,.62); }
+    .service .sico { width: 36px; height: 36px; border-radius: 8px; display: grid; place-items: center; color: #4ed989; background: rgba(49,212,123,.12); }
+    .service b { font-size: 12px; display: block; } .service span { font-size: 11px; color: var(--green); display: block; margin-top: 5px; }
+    .button { border: 1px solid #255186; background: rgba(17,73,135,.18); color: #3898ff; padding: 8px 13px; border-radius: 6px; cursor: pointer; }
+    .button:hover { background: #0f6be8; color: white; }
+    .button.primary { background: linear-gradient(135deg,#1684ff,#0867ee); color: white; border-color: #278eff; }
+    .button.danger { color: #ff696e; border-color: #733747; background: rgba(130,37,51,.14); }
+    .page-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 16px; }
+    .mini-stat { padding: 17px 18px; min-height: 100px; }
+    .mini-stat small { color: #7890ab; display: block; margin-bottom: 11px; }
+    .mini-stat strong { font-size: 22px; }
+    .toolbar { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; }
+    .field { background: #0d1c2f; border: 1px solid #27405f; color: #cbd7e5; padding: 8px 10px; border-radius: 6px; min-width: 130px; }
+    .empty-note { padding: 24px; text-align: center; color: #6f829a; border: 1px dashed #2a405e; border-radius: 8px; }
+    .notice { border: 1px solid #6d5020; background: rgba(122,82,14,.15); color: #ffc657; padding: 11px 13px; border-radius: 7px; margin-bottom: 15px; font-size: 12px; }
+    .toast { position: fixed; right: 28px; bottom: 25px; background: #17314f; border: 1px solid #2e5a8b; color: #dbeaff; padding: 12px 16px; border-radius: 8px; box-shadow: var(--shadow); opacity: 0; transform: translateY(15px); transition: .2s; pointer-events: none; z-index: 99; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .prototype-note { color: #667b94; font-size: 11px; text-align: right; margin-top: 14px; }
+    .mobile-menu-open { display: none; border: 1px solid #27405f; background: #122741; color: #dce9f8; border-radius: 7px; padding: 8px 11px; cursor: pointer; }
+    .mobile-mask { display: none; position: fixed; inset: 0; background: rgba(2,8,16,.62); z-index: 19; }
+    @media (max-width: 1180px) {
+      .grid-4 { grid-template-columns: repeat(2, 1fr); }
+      .services { grid-template-columns: repeat(3,1fr); }
+      .flow-row { grid-template-columns: 1fr; gap: 10px; }
+      .flow-row .arrow { transform: rotate(90deg); }
+    }
+    @media (max-width: 820px) {
+      .app { padding: 0; }
+      .sidebar { position: fixed; z-index: 20; left: 0; top: 0; height: 100vh; border-radius: 0; transform: translateX(-100%); }
+      .sidebar.mobile-open { transform: translateX(0); box-shadow: 18px 0 45px rgba(0,0,0,.5); }
+      .mobile-menu-open { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 14px; }
+      .mobile-mask.show { display: block; }
+      .shell { border-radius: 0; padding: 20px 14px; }
+      .topbar, .two-col, .split-65 { display: block; }
+      .top-actions { justify-content: flex-start; margin-top: 16px; }
+      .grid-4, .page-grid { grid-template-columns: 1fr; }
+      .services { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="logo">⌁</div>
+        <div class="brand-name"><strong>量化运营台</strong><small>QUANT PLATFORM</small></div>
+      </div>
+      <button class="collapse-btn" onclick="toggleSidebar()">≡</button>
+      <div class="menu-scroll">
+        <div class="menu-item active leaf" onclick="openPage('overview','运行总览','系统运行状态与关键指标总览','运行总览',this)"><span class="ico">⌂</span><span class="label">运行总览</span></div>
+
+        <div class="menu-group">
+          <div class="menu-item" onclick="toggleGroup(this)"><span class="ico">▥</span><span class="label">市场监控</span><span class="chev">›</span></div>
+          <div class="submenu">
+            <div class="menu-item leaf" onclick="openPage('market-live','全市场行情','沪深市场实时状态与数据时效','市场监控 / 全市场行情',this)"><span class="label">全市场行情</span></div>
+            <div class="menu-group">
+              <div class="menu-item" onclick="toggleGroup(this)"><span class="label">异动监控</span><span class="chev">›</span></div>
+              <div class="submenu">
+                <div class="menu-item leaf" onclick="openPage('move-price','价格异动','实时价格、振幅与跳变监控','市场监控 / 异动监控 / 价格异动',this)"><span class="label">价格异动</span></div>
+                <div class="menu-item leaf" onclick="openPage('move-volume','成交量异动','量比、成交额与流动性异常','市场监控 / 异动监控 / 成交量异动',this)"><span class="label">成交量异动</span></div>
+                <div class="menu-item leaf" onclick="openPage('move-limit','涨跌停监控','涨停、跌停、开板与封单状态','市场监控 / 异动监控 / 涨跌停',this)"><span class="label">涨跌停</span></div>
+              </div>
+            </div>
+            <div class="menu-group">
+              <div class="menu-item" onclick="toggleGroup(this)"><span class="label">资讯事件</span><span class="chev">›</span></div>
+              <div class="submenu">
+                <div class="menu-item leaf" onclick="openPage('news-official','官方公告','交易所、巨潮资讯与法定披露','市场监控 / 资讯事件 / 官方公告',this)"><span class="label">官方公告</span></div>
+                <div class="menu-item leaf" onclick="openPage('news-finance','财经新闻','可信新闻源与事件影响跟踪','市场监控 / 资讯事件 / 财经新闻',this)"><span class="label">财经新闻</span></div>
+                <div class="menu-item leaf" onclick="openPage('news-sentiment','情绪雷达','市场情绪仅作为低权重辅助','市场监控 / 资讯事件 / 情绪雷达',this)"><span class="label">情绪雷达</span></div>
+              </div>
+            </div>
+            <div class="menu-item leaf" onclick="openPage('market-sector','行业与大盘','指数、市场宽度与行业联动','市场监控 / 行业与大盘',this)"><span class="label">行业与大盘</span></div>
+          </div>
+        </div>
+
+        <div class="menu-group">
+          <div class="menu-item" onclick="toggleGroup(this)"><span class="ico">◉</span><span class="label">机会中心</span><span class="chev">›</span></div>
+          <div class="submenu">
+            <div class="menu-item leaf" onclick="openPage('opp-live','实时机会','全市场触发机会与费用后优势','机会中心 / 实时机会',this)"><span class="label">实时机会</span></div>
+            <div class="menu-item leaf" onclick="openPage('opp-deep','深度分析','技术、基本面、新闻与风险证据','机会中心 / 深度分析',this)"><span class="label">深度分析</span></div>
+            <div class="menu-item leaf" onclick="openPage('opp-excluded','排除清单','不交易股票及明确拒绝原因','机会中心 / 排除清单',this)"><span class="label">排除清单</span></div>
+            <div class="menu-item leaf" onclick="openPage('opp-holdings','持仓复评','当前持仓与新机会机会成本比较','机会中心 / 持仓复评',this)"><span class="label">持仓复评</span></div>
+          </div>
+        </div>
+
+        <div class="menu-group">
+          <div class="menu-item" onclick="toggleGroup(this)"><span class="ico">⌘</span><span class="label">自动交易</span><span class="chev">›</span></div>
+          <div class="submenu">
+            <div class="menu-item leaf" onclick="openPage('trade-control','运行控制','模拟账户、策略授权与安全锁','自动交易 / 运行控制',this)"><span class="label">运行控制</span></div>
+            <div class="menu-item leaf" onclick="openPage('trade-decisions','决策队列','待执行、拒绝与不操作决策','自动交易 / 决策队列',this)"><span class="label">决策队列</span></div>
+            <div class="menu-group">
+              <div class="menu-item" onclick="toggleGroup(this)"><span class="label">订单管理</span><span class="chev">›</span></div>
+              <div class="submenu">
+                <div class="menu-item leaf" onclick="openPage('orders-all','全部订单','订单全生命周期与幂等状态','自动交易 / 订单管理 / 全部订单',this)"><span class="label">全部订单</span></div>
+                <div class="menu-item leaf" onclick="openPage('orders-open','未完成订单','待报、已报与部分成交','自动交易 / 订单管理 / 未完成订单',this)"><span class="label">未完成订单</span></div>
+                <div class="menu-item leaf" onclick="openPage('orders-rejected','撤单与拒绝','撤单、废单和门禁拒绝原因','自动交易 / 订单管理 / 撤单与拒绝',this)"><span class="label">撤单与拒绝</span></div>
+              </div>
+            </div>
+            <div class="menu-item leaf" onclick="openPage('fills','成交明细','成交价格、费用、滑点与部分成交','自动交易 / 成交明细',this)"><span class="label">成交明细</span></div>
+            <div class="menu-item leaf" onclick="openPage('authorization','授权范围','账户、策略、标的、期限与风险额度','自动交易 / 授权范围',this)"><span class="label">授权范围</span></div>
+          </div>
+        </div>
+
+        <div class="menu-group">
+          <div class="menu-item" onclick="toggleGroup(this)"><span class="ico">▣</span><span class="label">组合与盈亏</span><span class="chev">›</span></div>
+          <div class="submenu">
+            <div class="menu-item leaf" onclick="openPage('portfolio-account','账户总览','资金、仓位与净资产概览','组合与盈亏 / 账户总览',this)"><span class="label">账户总览</span></div>
+            <div class="menu-item leaf" onclick="openPage('portfolio-positions','当前持仓','总数量、可用数量、成本与市值','组合与盈亏 / 当前持仓',this)"><span class="label">当前持仓</span></div>
+            <div class="menu-group">
+              <div class="menu-item" onclick="toggleGroup(this)"><span class="label">盈亏分析</span><span class="chev">›</span></div>
+              <div class="submenu">
+                <div class="menu-item leaf" onclick="openPage('pnl-today','当日盈亏','已实现、未实现、费用与净盈亏','组合与盈亏 / 盈亏分析 / 当日盈亏',this)"><span class="label">当日盈亏</span></div>
+                <div class="menu-item leaf" onclick="openPage('pnl-attribution','盈亏归因','按股票、订单、成交与策略归因','组合与盈亏 / 盈亏分析 / 盈亏归因',this)"><span class="label">盈亏归因</span></div>
+                <div class="menu-item leaf" onclick="openPage('pnl-history','历史净值','收益、回撤与稳定性记录','组合与盈亏 / 盈亏分析 / 历史净值',this)"><span class="label">历史净值</span></div>
+              </div>
+            </div>
+            <div class="menu-item leaf" onclick="openPage('portfolio-fees','费用分析','佣金、印花税、过户费与滑点','组合与盈亏 / 费用分析',this)"><span class="label">费用分析</span></div>
+          </div>
+        </div>
+
+        <div class="menu-group">
+          <div class="menu-item" onclick="toggleGroup(this)"><span class="ico">▧</span><span class="label">盘后复盘</span><span class="chev">›</span></div>
+          <div class="submenu">
+            <div class="menu-item leaf" onclick="openPage('review-daily','每日复盘','市场、决策、成交、盈亏与异常总结','盘后复盘 / 每日复盘',this)"><span class="label">每日复盘</span></div>
+            <div class="menu-item leaf" onclick="openPage('review-trades','交易归因','逐笔交易预期与实际结果','盘后复盘 / 交易归因',this)"><span class="label">交易归因</span></div>
+            <div class="menu-item leaf" onclick="openPage('review-missed','错失机会','未成交、不交易与错失机会审核','盘后复盘 / 错失机会',this)"><span class="label">错失机会</span></div>
+            <div class="menu-group">
+              <div class="menu-item" onclick="toggleGroup(this)"><span class="label">策略优化</span><span class="chev">›</span></div>
+              <div class="submenu">
+                <div class="menu-item leaf" onclick="openPage('opt-candidates','优化候选','复盘产生的待验证修改建议','盘后复盘 / 策略优化 / 优化候选',this)"><span class="label">优化候选</span></div>
+                <div class="menu-item leaf" onclick="openPage('opt-shadow','影子运行','至少20个交易日对照验证','盘后复盘 / 策略优化 / 影子运行',this)"><span class="label">影子运行</span></div>
+                <div class="menu-item leaf" onclick="openPage('opt-approval','审批与回滚','人工批准、版本发布与回滚','盘后复盘 / 策略优化 / 审批与回滚',this)"><span class="label">审批与回滚</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="menu-group">
+          <div class="menu-item" onclick="toggleGroup(this)"><span class="ico">◌</span><span class="label">风险与系统</span><span class="chev">›</span></div>
+          <div class="submenu">
+            <div class="menu-item leaf" onclick="openPage('risk-overview','风险总览','组合风险、日亏损与回撤门禁','风险与系统 / 风险总览',this)"><span class="label">风险总览</span></div>
+            <div class="menu-item leaf" onclick="openPage('risk-events','风险事件','预警、防御、硬锁与恢复记录','风险与系统 / 风险事件',this)"><span class="label">风险事件</span></div>
+            <div class="menu-item leaf" onclick="openPage('system-health','系统状态','数据、策略、风控与交易服务','风险与系统 / 系统状态',this)"><span class="label">系统状态</span></div>
+            <div class="menu-item leaf" onclick="openPage('alerts','告警中心','数据、交易、风控与系统告警','风险与系统 / 告警中心',this)"><span class="label">告警中心</span></div>
+            <div class="menu-item leaf" onclick="openPage('audit','完整审计日志','从触发到盈亏的关联追踪','风险与系统 / 完整审计日志',this)"><span class="label">完整审计日志</span></div>
+          </div>
+        </div>
+
+        <div class="menu-section">研究工具</div>
+        <div class="menu-group">
+          <div class="menu-item" onclick="toggleGroup(this)"><span class="ico">◫</span><span class="label">数据与认证</span><span class="chev">›</span></div>
+          <div class="submenu">
+            <div class="menu-item leaf" onclick="openPage('data-certified','Certified Store','认证历史数据与血缘','数据与认证 / Certified Store',this)"><span class="label">Certified Store</span></div>
+            <div class="menu-item leaf" onclick="openPage('data-batches','数据批次','Provider导入批次与终态','数据与认证 / 数据批次',this)"><span class="label">数据批次</span></div>
+            <div class="menu-item leaf" onclick="openPage('data-quality','质量检查','重复、缺失、异常与时间规范','数据与认证 / 质量检查',this)"><span class="label">质量检查</span></div>
+            <div class="menu-group">
+              <div class="menu-item" onclick="toggleGroup(this)"><span class="label">Research Readiness</span><span class="chev">›</span></div>
+              <div class="submenu">
+                <div class="menu-item leaf" onclick="openPage('ready-profiles','Profile审核','用途级字段需求与授权状态','数据与认证 / Research Readiness / Profile审核',this)"><span class="label">Profile审核</span></div>
+                <div class="menu-item leaf" onclick="openPage('ready-blockers','阻塞归因','缺失、企业行动与证据阻塞','数据与认证 / Research Readiness / 阻塞归因',this)"><span class="label">阻塞归因</span></div>
+              </div>
+            </div>
+            <div class="menu-item leaf" onclick="openPage('data-provider','Provider验证','主Provider与第二Provider差异','数据与认证 / Provider验证',this)"><span class="label">Provider验证</span></div>
+          </div>
+        </div>
+
+        <div class="menu-group">
+          <div class="menu-item" onclick="toggleGroup(this)"><span class="ico">☑</span><span class="label">策略与回测</span><span class="chev">›</span></div>
+          <div class="submenu">
+            <div class="menu-item leaf" onclick="openPage('strategy-versions','策略版本','当前、候选、影子与已停用版本','策略与回测 / 策略版本',this)"><span class="label">策略版本</span></div>
+            <div class="menu-item leaf" onclick="openPage('backtest-validation','回测验证','只展示可信验证与完整血缘','策略与回测 / 回测验证',this)"><span class="label">回测验证</span></div>
+            <div class="menu-group">
+              <div class="menu-item" onclick="toggleGroup(this)"><span class="label">市场规则</span><span class="chev">›</span></div>
+              <div class="submenu">
+                <div class="menu-item leaf" onclick="openPage('rules-trading','交易规则版本','T+1、整手、零股与涨跌停','策略与回测 / 市场规则 / 交易规则版本',this)"><span class="label">交易规则版本</span></div>
+                <div class="menu-item leaf" onclick="openPage('rules-fees','费用规则版本','佣金、税费、过户费与滑点','策略与回测 / 市场规则 / 费用规则版本',this)"><span class="label">费用规则版本</span></div>
+                <div class="menu-item leaf" onclick="openPage('rules-calendar','认证交易日历','官方日历、休市与覆盖范围','策略与回测 / 市场规则 / 认证交易日历',this)"><span class="label">认证交易日历</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="menu-group">
+          <div class="menu-item" onclick="toggleGroup(this)"><span class="ico">♙</span><span class="label">AI 辅助</span><span class="chev">›</span></div>
+          <div class="submenu">
+            <div class="menu-item leaf" onclick="openPage('ai-summary','信息摘要','新闻公告摘要与来源证据','AI 辅助 / 信息摘要',this)"><span class="label">信息摘要</span></div>
+            <div class="menu-item leaf" onclick="openPage('ai-evidence','证据复核','AI输出与原始证据对照','AI 辅助 / 证据复核',this)"><span class="label">证据复核</span></div>
+            <div class="menu-item leaf" onclick="openPage('ai-audit','AI审计','调用、输出、置信度与无下单证明','AI 辅助 / AI审计',this)"><span class="label">AI审计</span></div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="mobile-mask" id="mobile-mask" onclick="toggleMobileMenu(false)"></div>
+
+    <main class="main">
+      <section class="shell">
+        <header class="topbar">
+          <div class="title-wrap">
+            <button id="mobile-menu-open" class="mobile-menu-open" onclick="toggleMobileMenu(true)">☰ <span>菜单</span></button>
+            <div class="breadcrumb" id="breadcrumb">运行总览</div>
+            <h1 id="page-title">运行总览</h1>
+            <p id="page-subtitle">系统运行状态与关键指标总览</p>
+          </div>
+          <div class="top-actions">
+            <span class="status-chip">SIMULATION　⌄</span>
+            <span class="status-chip danger" onclick="toast('原型中自动执行保持关闭')">自动执行：关闭</span>
+            <span class="status-chip warn">数据：审核中</span>
+            <span class="status-chip proto">原型展示数据</span>
+            <div class="clock"><span class="clock-icon">◷</span><span><b id="clock">10:05:23</b><small id="date">2026-07-13</small></span></div>
+            <button class="icon-btn" onclick="toast('原型数据已刷新')">⟳</button>
+          </div>
+        </header>
+
+        <div id="overview-view">
+          <div class="grid-4">
+            <div class="metric"><div><h3>总资产</h3><strong>¥500,000.00</strong><p>初始资产 ¥500,000.00</p></div><div class="metric-icon">▣</div></div>
+            <div class="metric"><div><h3>今日盈亏</h3><strong>¥0.00</strong><p>0.00% · 未生成正式结算</p></div><div class="metric-icon green">¥</div></div>
+            <div class="metric"><div><h3>当前回撤</h3><strong>0.00%</strong><p>最大回撤 0.00%</p></div><div class="metric-icon orange">↘</div></div>
+            <div class="metric"><div><h3>市场状态</h3><strong style="color:#38db82">运行正常</strong><p>系统健康　●</p></div><div class="metric-icon">〽</div></div>
+          </div>
+
+          <div class="panel">
+            <div class="split-65">
+              <div style="border-right:1px solid #203550">
+                <div class="panel-head"><h2>自动闭环状态</h2><span class="hint">事件驱动 · 每分钟风险心跳</span></div>
+                <div class="panel-body">
+                  <div class="flow-row">
+                    <div class="flow-step"><span class="step-no">1</span><span class="step-text"><b>全市场扫描</b><small>进行中</small></span></div><span class="arrow">→</span>
+                    <div class="flow-step"><span class="step-no purple">2</span><span class="step-text"><b>深度分析 3</b><small>进行中</small></span></div><span class="arrow">→</span>
+                    <div class="flow-step"><span class="step-no green">3</span><span class="step-text"><b>组合决策</b><small>等待证据</small></span></div><span class="arrow">→</span>
+                    <div class="flow-step"><span class="step-no orange">4</span><span class="step-text"><b>执行锁定</b><small>等待授权</small></span></div>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div class="panel-head"><h2>订单与风险时间线</h2></div>
+                <div class="panel-body">
+                  <div class="timeline"><div class="timeline-row"><time>10:03</time><span>⚠ 数据延迟告警</span></div><div class="timeline-row ok"><time>10:05</time><span>● 无新增风险</span></div></div>
+                  <button class="button" onclick="openById('audit')">查看完整日志</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="two-col">
+            <div class="panel">
+              <div class="panel-head"><h2>实时机会与排除原因</h2><button class="button" onclick="openById('opp-live')">查看全部机会 ›</button></div>
+              <div class="panel-body"><table class="table"><thead><tr><th>股票代码</th><th>名称</th><th>系统结论</th><th>原因</th><th>目标仓位</th></tr></thead><tbody><tr><td>600519.SH</td><td>贵州茅台</td><td><span class="tag green">净价差不足</span></td><td><span class="tag">不交易</span></td><td>0%</td></tr><tr><td>300308.SZ</td><td>中际旭创</td><td><span class="tag red">风险门禁拒绝</span></td><td><span class="tag">高波动</span></td><td>0%</td></tr><tr><td>000001.SZ</td><td>平安银行</td><td><span class="tag orange">等待证据</span></td><td><span class="tag">新闻复核</span></td><td>0%</td></tr></tbody></table></div>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><h2>资产曲线（模拟）</h2><select class="field"><option>近30天</option><option>近90天</option></select></div>
+              <div class="panel-body"><div class="chart-wrap"><span class="chart-axis" style="top:8px">520K</span><span class="chart-axis" style="top:92px">500K</span><span class="chart-axis" style="bottom:7px">480K</span><svg viewBox="0 0 640 210" preserveAspectRatio="none"><defs><linearGradient id="grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1684ff" stop-opacity=".35"/><stop offset="1" stop-color="#1684ff" stop-opacity="0"/></linearGradient></defs><path d="M0,112 L22,108 L44,116 L66,109 L88,111 L110,104 L132,112 L154,95 L176,88 L198,75 L220,82 L242,80 L264,84 L286,76 L308,105 L330,111 L352,96 L374,83 L396,79 L418,69 L440,74 L462,64 L484,72 L506,49 L528,61 L550,52 L572,58 L594,51 L616,70 L640,63 L640,210 L0,210 Z" fill="url(#grad)"/><polyline points="0,112 22,108 44,116 66,109 88,111 110,104 132,112 154,95 176,88 198,75 220,82 242,80 264,84 286,76 308,105 330,111 352,96 374,83 396,79 418,69 440,74 462,64 484,72 506,49 528,61 550,52 572,58 594,51 616,70 640,63" fill="none" stroke="#1684ff" stroke-width="2"/><line x1="0" y1="110" x2="640" y2="110" stroke="#263d58" stroke-dasharray="4 5"/></svg></div></div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head"><h2>系统状态</h2><span class="hint">原型不代表真实服务连接</span></div>
+            <div class="panel-body"><div class="services"><div class="service"><span class="sico">▱</span><div><b>数据服务</b><span>界面原型</span></div></div><div class="service"><span class="sico">ϟ</span><div><b>交易服务</b><span>执行关闭</span></div></div><div class="service"><span class="sico">◇</span><div><b>风控引擎</b><span>规则已展示</span></div></div><div class="service"><span class="sico">▥</span><div><b>策略引擎</b><span>等待接入</span></div></div><div class="service"><span class="sico">♙</span><div><b>AI分析服务</b><span>默认关闭</span></div></div></div></div>
+          </div>
+        </div>
+
+        <div id="generic-view" style="display:none">
+          <div class="notice">这是交互原型展示数据，不代表当前项目已实现或已验证该能力。正式页面必须接入真实接口并显示数据质量、授权和拒绝原因。</div>
+          <div class="page-grid" id="generic-metrics"></div>
+          <div class="two-col">
+            <div class="panel" style="margin-top:0">
+              <div class="panel-head"><h2 id="primary-title">业务明细</h2><div class="toolbar"><select class="field"><option>今日</option><option>近7日</option><option>近30日</option></select><button class="button" onclick="toast('原型筛选已应用')">筛选</button></div></div>
+              <div class="panel-body" id="generic-table"></div>
+            </div>
+            <div class="panel" style="margin-top:0">
+              <div class="panel-head"><h2>状态与证据</h2><button class="button" onclick="toast('已复制原型关联ID')">复制关联ID</button></div>
+              <div class="panel-body" id="generic-side"></div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>审计时间线</h2><span class="hint">event_id → correlation_id → result_hash</span></div>
+            <div class="panel-body"><div class="timeline"><div class="timeline-row ok"><time>09:35</time><span>页面数据契约校验通过</span></div><div class="timeline-row ok"><time>10:01</time><span>原型事件进入分析流程</span></div><div class="timeline-row"><time>10:03</time><span>等待真实后端证据接入</span></div></div></div>
+          </div>
+        </div>
+
+        <div class="prototype-note">Prototype v1 · 仅用于页面与信息架构确认 · 所有数值均为展示数据</div>
+      </section>
+    </main>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    var pageData = {
+      'market-live': ['覆盖股票','5,200+','数据延迟','< 5s','市场状态','谨慎',['代码','名称','最新价','涨跌幅','数据状态'],[['600519.SH','贵州茅台','1,420.00','+0.31%','正常'],['000001.SZ','平安银行','11.58','-0.17%','正常'],['688981.SH','中芯国际','88.20','+1.42%','待复核']]],
+      'move-price': ['触发股票','18','高风险','3','已进入深析','6',['代码','异动类型','变化幅度','触发时间','处理'],[['300308.SZ','5分钟涨幅','+3.20%','10:01:05','深度分析'],['600519.SH','振幅扩大','2.10%','10:02:18','观察'],['000001.SZ','快速回落','-1.30%','10:03:44','风险复核']]],
+      'move-volume': ['量能异动','24','流动性拒绝','7','深度分析','5',['代码','量比','成交额','相对均值','状态'],[['300502.SZ','2.8','4.2亿','+145%','复核'],['603986.SH','1.9','3.1亿','+82%','观察'],['688981.SH','3.5','8.6亿','+210%','触发']]],
+      'move-limit': ['涨停','42','跌停','6','开板','11',['代码','状态','封单金额','首次时间','交易资格'],[['000001.SZ','正常交易','—','—','可评估'],['300308.SZ','接近涨停','1.2亿','10:02','禁止追价'],['600519.SH','正常交易','—','—','可评估']]],
+      'news-official': ['新增公告','128','高影响','9','待核验','4',['时间','股票','公告类型','证据来源','PIT状态'],[['09:42','600519.SH','年度报告','CNINFO','可见'],['09:55','300308.SZ','业绩预告','交易所','可见'],['10:01','000001.SZ','临时公告','CNINFO','待解析']]],
+      'news-finance': ['新闻条数','356','可信来源','18','触发分析','12',['时间','股票','标题摘要','来源等级','状态'],[['09:38','300308.SZ','行业订单动态','二级','交叉核验'],['09:49','600519.SH','消费板块观察','二级','低权重'],['10:02','000001.SZ','银行板块新闻','二级','已归档']]],
+      'news-sentiment': ['情绪指数','54','极端情绪','2','可交易影响','0',['对象','情绪分','变化','证据等级','用途'],[['全市场','54','+3','三级','风险提示'],['半导体','68','+9','三级','低权重'],['银行','43','-2','三级','不单独交易']]],
+      'market-sector': ['上涨行业','12','下跌行业','19','市场宽度','42%',['行业/指数','涨跌幅','成交活跃度','风险状态','仓位影响'],[['上证指数','-0.22%','正常','谨慎','总仓≤60%'],['半导体','+1.32%','偏高','波动','降低单笔'],['银行','-0.18%','正常','正常','无变化']]],
+      'opp-live': ['触发机会','18','可深析','6','可下单','0',['代码','综合分','预计毛收益','预计成本','系统动作'],[['600519.SH','72','0.46%','0.51%','不交易'],['300308.SZ','81','1.20%','0.62%','风险拒绝'],['000001.SZ','67','0.74%','0.48%','等待证据']]],
+      'opp-deep': ['分析中','3','证据完整','1','组合可用','0',['因素','300308.SZ','600519.SH','000001.SZ','数据截止'],[['技术面','82','61','58','10:04:55'],['基本面','71','87','76','最新披露'],['新闻事件','64','55','68','10:04:20'],['风险','拒绝','通过','待核验','10:05:00']]],
+      'opp-excluded': ['排除股票','326','证券状态','48','数据不足','278',['代码','排除类型','原因','证据','恢复条件'],[['000004.SZ','证券状态','ST风险','交易所','解除后复核'],['688001.SH','数据不足','状态覆盖缺失','Readiness','补齐证据'],['300001.SZ','流动性','成交不足','行情','持续改善']]],
+      'opp-holdings': ['当前持仓','0','优于新机会','0','建议动作','持有现金',['标的','当前效用','新机会优势','成本后差值','建议'],[['现金','基准','不足','-0.05%','保持现金'],['600519.SH','—','不足','-0.12%','不建仓'],['300308.SZ','—','风险拒绝','—','不建仓']]],
+      'trade-control': ['账户','SIMULATION','自动执行','关闭','范围授权','未生效',['控制项','当前状态','要求','审批','操作'],[['交易执行','关闭','验收通过','未审批','不可开启'],['AI下单','永久禁用','不得直接产单','不适用','锁定'],['定时下单','关闭','规则策略授权','未审批','锁定']]],
+      'trade-decisions': ['待处理','3','已拒绝','7','不操作','18',['决策ID','标的','动作','目标仓位','状态'],[['DEC-10021','600519.SH','不操作','0%','成本不足'],['DEC-10022','300308.SZ','不操作','0%','风险拒绝'],['DEC-10023','000001.SZ','等待','0%','证据复核']]],
+      'orders-all': ['今日订单','0','已成交','0','拒绝','0',['订单ID','代码','方向','数量','状态'],[['—','—','—','—','自动执行关闭']]],
+      'orders-open': ['未完成','0','部分成交','0','冻结资金','¥0',['订单ID','代码','已成交/总量','剩余','状态'],[['—','—','0/0','0','无未完成订单']]],
+      'orders-rejected': ['撤单','0','门禁拒绝','0','废单','0',['关联ID','代码','类型','拒绝原因','时间'],[['—','—','—','当前无真实订单','—']]],
+      'fills': ['成交笔数','0','成交金额','¥0','总费用','¥0',['成交ID','订单ID','代码','价格×数量','费用'],[['—','—','—','—','无成交']]],
+      'authorization': ['授权账户','0','授权策略','0','有效额度','¥0',['授权项','范围','状态','审批人','有效期'],[['模拟账户','待选择','未授权','—','—'],['策略版本','待选择','未授权','—','—'],['最大风险','0.25%/笔','草案','—','—']]],
+      'portfolio-account': ['总资产','¥500,000','现金','¥500,000','总仓位','0%',['账户项目','期初','变动','期末','对账'],[['现金','500,000','0','500,000','一致'],['持仓市值','0','0','0','一致'],['净资产','500,000','0','500,000','一致']]],
+      'portfolio-positions': ['持仓数','0','可用市值','¥0','T+1冻结','0股',['代码','总数量','可用数量','平均成本','未实现盈亏'],[['—','0','0','—','当前空仓']]],
+      'pnl-today': ['净盈亏','¥0.00','已实现','¥0.00','未实现','¥0.00',['项目','毛金额','费用','净金额','对账'],[['交易盈亏','0','0','0','一致'],['企业行动','0','0','0','一致'],['账户合计','0','0','0','一致']]],
+      'pnl-attribution': ['贡献股票','0','费用侵蚀','¥0','对账差额','¥0',['归因维度','毛贡献','成本','净贡献','证据'],[['股票','0','0','0','无成交'],['策略','0','0','0','无成交'],['现金事件','0','0','0','无外部入金']]],
+      'pnl-history': ['累计收益','0.00%','最大回撤','0.00%','有效交易日','0',['日期','期初净值','期末净值','日收益','结果Hash'],[['2026-07-13','1.0000','待结算','—','待生成']]],
+      'portfolio-fees': ['总费用','¥0','佣金','¥0','滑点','¥0',['费用类型','规则版本','买入','卖出','合计'],[['佣金','待认证','0','0','0'],['印花税','官方版本','—','0','0'],['过户费','官方版本','0','0','0'],['滑点','执行模型','0','0','0']]],
+      'review-daily': ['复盘状态','待收盘','交易数量','0','异常数量','1',['复盘模块','结论','证据状态','负责人','状态'],[['市场环境','谨慎','原型数据','系统','待结算'],['交易行为','无交易','完整','系统','正常'],['系统异常','数据延迟','待复核','人工','处理中']]],
+      'review-trades': ['有效交易','0','正贡献','0','负贡献','0',['交易ID','预期净优势','实际净贡献','差异原因','结论'],[['—','—','—','无成交','待运行']]],
+      'review-missed': ['错失机会','2','正确拒绝','2','需复核','0',['代码','当时决策','后续表现','是否可得','结论'],[['600519.SH','不交易','+0.10%','是','成本后仍不足'],['300308.SZ','风险拒绝','+0.60%','是','遵守风险门禁']]],
+      'opt-candidates': ['候选建议','2','可验证','1','禁止自动上线','是',['候选版本','修改内容','证据','风险','状态'],[['STR-C01','降低噪声触发','待样本外','低','建议'],['STR-C02','调整行业权重','证据不足','中','阻塞']]],
+      'opt-shadow': ['运行版本','0','要求天数','≥20','已完成','0',['影子版本','对照版本','运行天数','净收益差','状态'],[['—','—','0/20','—','等待候选']]],
+      'opt-approval': ['待审批','0','已批准','0','可回滚版本','1',['版本','审批类型','审批人','生效范围','状态'],[['BASE-V1','基线保留','人工','模拟账户','未发布']]],
+      'risk-overview': ['单笔风险','≤0.25%','日亏损','0.00%','当前回撤','0.00%',['风险项','当前值','预警线','硬限制','状态'],[['单日亏损','0.00%','0.50%','1.00%','正常'],['组合回撤','0.00%','2.00%','5.00%','正常'],['单股仓位','0.00%','10.00%','20.00%','正常']]],
+      'risk-events': ['今日事件','1','硬锁','0','待人工','0',['时间','级别','风险类型','系统动作','状态'],[['10:03','警告','数据延迟','禁止使用过期行情','处理中']]],
+      'system-health': ['在线服务','5/5','风险心跳','正常','数据时效','告警',['服务','状态','最后心跳','版本','说明'],[['数据服务','原型','10:05:00','—','未接后端'],['风控引擎','原型','10:05:00','—','规则展示'],['交易服务','关闭','10:05:00','—','安全状态']]],
+      'alerts': ['未处理','1','严重','0','警告','1',['时间','级别','来源','内容','处理状态'],[['10:03','警告','数据服务','行情延迟超过阈值','待复核']]],
+      'audit': ['关联链','3','完整链','0','异常链','1',['correlation_id','起点','当前节点','数据截止','完整性'],[['CORR-DEMO-001','全市场扫描','深度分析','10:04:55','原型'],['CORR-DEMO-002','新闻事件','证据复核','10:04:20','原型']]],
+      'data-certified': ['认证记录','示例','Unknown认证','0','Synthetic认证','0',['数据集','日期范围','Adjustment','认证状态','Readiness'],[['受控数据集','2025-07~2026-06','raw','certified','review_required']]],
+      'data-batches': ['总批次','10','成功','9','待复核','1',['batch_id','Provider','范围','终态','行数'],[['BATCH-DEMO-01','Sohu','样本股票','certified','241'],['BATCH-DEMO-02','Sohu','样本股票','review_required','236']]],
+      'data-quality': ['重复率','0%','异常时间','0','Unresolved','6',['检查项','结果','阈值','影响范围','状态'],[['自然日重复','0','0','Certified','通过'],['23:00时间戳','0','0','Certified','通过'],['缺失归因','6','0','Readiness','阻塞']]],
+      'ready-profiles': ['Ready','0','Review','10','Rejected','0',['股票/数据集','用途','Profile','区间','状态'],[['受控数据集','return_backtest','OHLCV_RETURN_V1','年度','review_required'],['受控数据集','execution','EXECUTION_REFERENCE_V1','实时','rejected']]],
+      'ready-blockers': ['阻塞项','16','缺失归因','6','企业行动','10',['股票/范围','阻塞类型','证据来源','影响Profile','状态'],[['688981.SH','日期缺失','待官方证据','OHLCV_RETURN_V1','unresolved'],['冻结清单','企业行动','待事件级审核','Total Return','unresolved']]],
+      'data-provider': ['主Provider','Sohu','第二Provider','Tencent','重大差异','待复核',['股票','抽查日','OHLC差异','Volume差异','结论'],[['300308.SZ','12','容差内','容差内','PASS'],['688981.SH','12','待完成','待完成','REVIEW']]],
+      'strategy-versions': ['运行版本','未发布','候选版本','2','影子版本','0',['版本','类型','Profile','状态','回滚目标'],[['BASE-V1','规则策略','OHLCV_RETURN_V1','未授权','—'],['STR-C01','候选','OHLCV_RETURN_V1','建议','BASE-V1']]],
+      'backtest-validation': ['公共执行','关闭','验证范围','固定样本','未来函数','0',['验证项','输入Hash','引擎版本','差异','状态'],[['Engine/Reference','dataset-demo','engine-v1','0','固定范围通过'],['确定性运行','dataset-demo','engine-v1','0','固定范围通过']]],
+      'rules-trading': ['规则注册','已建立','未知状态','Fail closed','当前日期','2026-07-13',['规则','适用范围','版本','来源','状态'],[['T+1','普通A股','官方版本','交易所','可追踪'],['买入整手','普通A股','官方版本','交易所','可追踪'],['涨跌停','按板块/日期','官方版本','交易所','可追踪']]],
+      'rules-fees': ['费用版本','基线','账户费率','未认证','滑点模型','保守',['费用','方向','费率/规则','来源','状态'],[['佣金','双向','账户待认证','券商','阻塞'],['印花税','卖出','按日期','税务/财政','可追踪'],['过户费','双向','按日期','中国结算','可追踪']]],
+      'rules-calendar': ['覆盖状态','受控范围','Weekday回退','禁止','缺失日期','Fail closed',['日期','市场','是否交易','证据来源','认证状态'],[['2026-07-13','沪深','是','交易所日历','confirmed'],['2026-07-12','沪深','否','交易所日历','confirmed']]],
+      'ai-summary': ['AI状态','关闭','可摘要事件','12','可下单','否',['事件','来源等级','AI摘要','置信度','交易权限'],[['年度报告','一级','等待启用后摘要','—','无'],['财经新闻','二级','等待启用后摘要','—','无']]],
+      'ai-evidence': ['待复核','0','来源完整','0','可影响评分','低权重',['输出ID','原始来源','PIT时间','一致性','结论'],[['—','—','—','AI默认关闭','无输出']]],
+      'ai-audit': ['AI调用','0','订单创建','0','越权尝试','0',['调用ID','用途','模型版本','order_created','审计状态'],[['—','—','—','false','AI默认关闭']]]
+    };
+
+    function toggleSidebar() {
+      document.getElementById('sidebar').classList.toggle('collapsed');
+    }
+    function toggleMobileMenu(open) {
+      document.getElementById('sidebar').classList.toggle('mobile-open', open);
+      document.getElementById('mobile-mask').classList.toggle('show', open);
+    }
+    function toggleGroup(el) {
+      var group = el.parentElement;
+      group.classList.toggle('open');
+    }
+    function clearActive() {
+      document.querySelectorAll('.menu-item.active').forEach(function(x){ x.classList.remove('active'); });
+    }
+    function openPage(id, title, subtitle, path, el) {
+      if (el) {
+        clearActive();
+        el.classList.add('active');
+        var p = el.parentElement;
+        while (p && p.id !== 'sidebar') {
+          if (p.classList && p.classList.contains('menu-group')) p.classList.add('open');
+          p = p.parentElement;
+        }
+      }
+      document.getElementById('page-title').textContent = title;
+      document.getElementById('page-subtitle').textContent = subtitle;
+      document.getElementById('breadcrumb').textContent = path;
+      if (id === 'overview') {
+        document.getElementById('overview-view').style.display = 'block';
+        document.getElementById('generic-view').style.display = 'none';
+      } else {
+        document.getElementById('overview-view').style.display = 'none';
+        document.getElementById('generic-view').style.display = 'block';
+        renderGeneric(id, title);
+      }
+      if (window.innerWidth <= 820) toggleMobileMenu(false);
+      window.scrollTo({top:0,behavior:'smooth'});
+    }
+    function renderGeneric(id, title) {
+      var d = pageData[id] || ['状态','待接入','数据','未验证','权限','关闭',['项目','内容','状态','证据','说明'],[['页面原型',title,'待接入','—','未实现不伪装']]];
+      document.getElementById('generic-metrics').innerHTML =
+        '<div class="panel mini-stat"><small>' + d[0] + '</small><strong>' + d[1] + '</strong></div>' +
+        '<div class="panel mini-stat"><small>' + d[2] + '</small><strong>' + d[3] + '</strong></div>' +
+        '<div class="panel mini-stat"><small>' + d[4] + '</small><strong>' + d[5] + '</strong></div>';
+      document.getElementById('primary-title').textContent = title + '明细';
+      var headers = d[6], rows = d[7];
+      var html = '<table class="table"><thead><tr>';
+      headers.forEach(function(h){ html += '<th>' + h + '</th>'; });
+      html += '</tr></thead><tbody>';
+      rows.forEach(function(row){ html += '<tr>'; row.forEach(function(v, i){ var cls = i === row.length-1 ? statusClass(v) : ''; html += '<td>' + (cls ? '<span class="tag '+cls+'">'+v+'</span>' : v) + '</td>'; }); html += '</tr>'; });
+      html += '</tbody></table>';
+      document.getElementById('generic-table').innerHTML = html;
+      document.getElementById('generic-side').innerHTML =
+        '<div class="timeline"><div class="timeline-row ok"><time>状态</time><span>页面结构已定义</span></div><div class="timeline-row"><time>数据</time><span>等待真实 API 契约</span></div><div class="timeline-row"><time>权限</time><span>当前发布锁保持关闭</span></div></div>' +
+        '<div class="empty-note">所有示例值均为原型占位。<br>正式实现无数据时显示原因，不显示伪造数值。</div>';
+    }
+    function statusClass(v) {
+      var s = String(v).toLowerCase();
+      if (s.indexOf('通过') >= 0 || s.indexOf('正常') >= 0 || s.indexOf('pass') >= 0 || s.indexOf('一致') >= 0) return 'green';
+      if (s.indexOf('拒绝') >= 0 || s.indexOf('失败') >= 0 || s.indexOf('阻塞') >= 0 || s.indexOf('rejected') >= 0) return 'red';
+      if (s.indexOf('等待') >= 0 || s.indexOf('复核') >= 0 || s.indexOf('review') >= 0 || s.indexOf('unresolved') >= 0) return 'orange';
+      return 'blue';
+    }
+    function openById(id) {
+      var el = document.querySelector('[onclick*="\'' + id + '\'"]');
+      if (el) el.click();
+    }
+    function toast(text) {
+      var t = document.getElementById('toast');
+      t.textContent = text;
+      t.classList.add('show');
+      setTimeout(function(){ t.classList.remove('show'); }, 1800);
+    }
+    function tick() {
+      var now = new Date();
+      document.getElementById('clock').textContent = now.toLocaleTimeString('zh-CN',{hour12:false});
+      document.getElementById('date').textContent = now.toLocaleDateString('zh-CN').replace(/\//g,'-');
+    }
+    tick();
+    setInterval(tick, 1000);
+  </script>
+</body>
+</html>

@@ -33,6 +33,10 @@ tmp/
 *.sqlite
 *.sql
 data/
+!backend/app/data/
+backend/app/data/*
+!backend/app/data/dataset_expansion.py
+!backend/app/data/sohu_daily_importer.py
 datasets/
 backups/
 

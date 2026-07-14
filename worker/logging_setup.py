@@ -18,6 +18,8 @@ def setup_logging() -> None:
     handler = logging.StreamHandler(sys.stdout)
     root.addHandler(handler)
     root.setLevel(level)
+    for logger_name in ("httpx", "httpcore"):
+        logging.getLogger(logger_name).setLevel(max(level, logging.WARNING))
 
     shared = [
         structlog.contextvars.merge_contextvars,

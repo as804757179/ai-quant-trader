@@ -1,0 +1,59 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -NonInteractive -Command \"$root = (& git rev-parse --show-toplevel).Trim(); & (Join-Path $root '.codex/hooks/codex_guard.ps1')\"",
+            "commandWindows": "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"$root = (& git rev-parse --show-toplevel).Trim(); & (Join-Path $root '.codex\\hooks\\codex_guard.ps1')\"",
+            "timeout": 15,
+            "statusMessage": "正在检查项目运行环境"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -NonInteractive -Command \"$root = (& git rev-parse --show-toplevel).Trim(); & (Join-Path $root '.codex/hooks/codex_guard.ps1')\"",
+            "commandWindows": "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"$root = (& git rev-parse --show-toplevel).Trim(); & (Join-Path $root '.codex\\hooks\\codex_guard.ps1')\"",
+            "timeout": 15,
+            "statusMessage": "正在执行每轮项目预检"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|shell_command|functions\\.exec|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -NonInteractive -Command \"$root = (& git rev-parse --show-toplevel).Trim(); & (Join-Path $root '.codex/hooks/codex_guard.ps1')\"",
+            "commandWindows": "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"$root = (& git rev-parse --show-toplevel).Trim(); & (Join-Path $root '.codex\\hooks\\codex_guard.ps1')\"",
+            "timeout": 5,
+            "statusMessage": "正在检查命令是否会阻塞"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -NonInteractive -Command \"$root = (& git rev-parse --show-toplevel).Trim(); & (Join-Path $root '.codex/hooks/codex_guard.ps1')\"",
+            "commandWindows": "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"$root = (& git rev-parse --show-toplevel).Trim(); & (Join-Path $root '.codex\\hooks\\codex_guard.ps1')\"",
+            "timeout": 5,
+            "statusMessage": "正在记录 MCP 工具健康状态"
+          }
+        ]
+      }
+    ]
+  }
+}
