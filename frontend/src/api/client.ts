@@ -47,7 +47,10 @@ function formatApiError(err: unknown, fallback: string): Error {
     (ax.code === "ECONNABORTED" ? "请求超时，请稍后重试" : undefined) ||
     ax.message ||
     fallback;
-  return new Error(String(msg));
+  const error = new Error(String(msg)) as Error & { status?: number };
+  error.name = "ApiError";
+  error.status = status;
+  return error;
 }
 
 export async function get<T>(url: string, params?: Record<string, unknown>) {
@@ -57,20 +60,6 @@ export async function get<T>(url: string, params?: Record<string, unknown>) {
   } catch (err) {
     throw formatApiError(err, "请求失败");
   }
-}
-
-export async function post<T>(url: string, body?: Record<string, unknown>) {
-  try {
-    const res = await client.post<APIResponse<T>>(url, body);
-    return res.data;
-  } catch (err) {
-    throw formatApiError(err, "请求失败");
-  }
-}
-
-/** 实盘确认令牌（可选）：仅前端开发调试用，生产应由安全输入 */
-export function getLiveConfirmToken(): string {
-  return (import.meta.env.VITE_LIVE_CONFIRM_TOKEN as string) || "";
 }
 
 export default client;

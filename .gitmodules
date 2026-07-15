@@ -1,6 +1,3 @@
 [submodule "a-stock-data"]
 	path = a-stock-data
 	url = https://github.com/as804757179/a-stock-data.git
-[submodule "AI-Trader"]
-	path = AI-Trader
-	url = https://github.com/HKUDS/AI-Trader

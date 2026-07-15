@@ -23,7 +23,7 @@ build/
 .idea/
 
 # 日志和缓存
-logs/
+/logs/
 *.log
 cache/
 tmp/
@@ -32,12 +32,8 @@ tmp/
 *.db
 *.sqlite
 *.sql
-data/
-!backend/app/data/
-backend/app/data/*
-!backend/app/data/dataset_expansion.py
-!backend/app/data/sohu_daily_importer.py
-datasets/
+/data/
+/datasets/
 backups/
 
 # 系统文件

@@ -12,4 +12,3 @@ httpx==0.26.0
 pandas==2.2.0
 numpy==1.26.4
 kombu==5.3.5
-pytest==7.4.4

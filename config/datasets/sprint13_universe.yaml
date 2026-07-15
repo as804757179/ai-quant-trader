@@ -1,0 +1,45 @@
+dataset_id: sprint13-controlled-certified-v1
+dataset_type: engineering_validation_not_investment_universe
+frozen: true
+frozen_at: "2026-07-12T12:30:00+08:00"
+selection_uses_target_period_returns: false
+date_from: "2025-07-01"
+date_to: "2026-06-30"
+period: 1d
+adjustment: raw
+primary_provider:
+  provider: sohu
+  source: sohu_daily_kline
+  endpoint: https://q.stock.sohu.com/hisHq
+  fallback: prohibited
+secondary_provider:
+  provider: tencent
+  source: tencent_fqkline_raw
+  endpoint: https://web.ifzq.gtimg.cn/appstock/app/fqkline/get
+  mode: read_only_no_fallback
+selection_policy:
+  - ordinary_a_share_only
+  - shanghai_or_shenzhen_only
+  - listed_before_2025_07_01
+  - no_verified_st_or_star_st_in_target_range
+  - at_least_five_industries
+  - at_most_two_stocks_per_industry
+  - no_target_period_return_or_strategy_selection
+evidence:
+  listing_and_board:
+    sh: https://www.sse.com.cn/assortment/stock/list/share/
+    sz: https://www.szse.cn/market/product/stock/list/index.html
+  security_status:
+    sh: https://www.sse.com.cn/market/stockdata/overview/day/
+    sz: https://www.szse.cn/market/product/stock/list/index.html
+stocks:
+  - {stock_code: 600519.SH, name: 贵州茅台, board: sh_main, industry: 食品饮料, listing_date: "2001-08-27", selection_reason: 上证主板消费行业代表}
+  - {stock_code: 601318.SH, name: 中国平安, board: sh_main, industry: 非银金融, listing_date: "2007-03-01", selection_reason: 上证主板金融行业代表}
+  - {stock_code: 600276.SH, name: 恒瑞医药, board: sh_main, industry: 医药生物, listing_date: "2000-10-18", selection_reason: 上证主板医药行业代表}
+  - {stock_code: 000001.SZ, name: 平安银行, board: sz_main, industry: 银行, listing_date: "1991-04-03", selection_reason: 深证主板银行代表}
+  - {stock_code: 000333.SZ, name: 美的集团, board: sz_main, industry: 家用电器, listing_date: "2013-09-18", selection_reason: 深证主板制造业代表}
+  - {stock_code: 002415.SZ, name: 海康威视, board: sz_main, industry: 计算机设备, listing_date: "2010-05-28", selection_reason: 深证主板科技制造代表}
+  - {stock_code: 300308.SZ, name: 中际旭创, board: chinext, industry: 通信, listing_date: "2012-04-10", selection_reason: 创业板通信行业代表且保留既有认证样本}
+  - {stock_code: 300750.SZ, name: 宁德时代, board: chinext, industry: 电力设备, listing_date: "2018-06-11", selection_reason: 创业板新能源制造代表}
+  - {stock_code: 688981.SH, name: 中芯国际, board: star, industry: 电子, listing_date: "2020-07-16", selection_reason: 科创板半导体制造代表}
+  - {stock_code: 600036.SH, name: 招商银行, board: sh_main, industry: 银行, listing_date: "2002-04-09", selection_reason: 上证主板银行代表且行业数量不超过二}

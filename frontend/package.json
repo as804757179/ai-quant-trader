@@ -6,14 +6,13 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 3000",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 3000"
+    "preview": "vite preview --host 0.0.0.0 --port 3000",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ant-design/pro-components": "^2.6.0",
     "antd": "^5.12.0",
     "axios": "^1.6.0",
     "dayjs": "^1.11.0",
-    "lightweight-charts": "^4.1.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.0",

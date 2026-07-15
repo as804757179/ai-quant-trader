@@ -3,27 +3,21 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { ConfigProvider, App as AntApp, theme } from "antd";
 import zhCN from "antd/locale/zh_CN";
-import dayjs from "dayjs";
-import "dayjs/locale/zh-cn";
-import utc from "dayjs/plugin/utc";
-import timezone from "dayjs/plugin/timezone";
 import App from "./App";
 import "antd/dist/reset.css";
 import "./styles/global.css";
 
-dayjs.extend(utc);
-dayjs.extend(timezone);
-dayjs.locale("zh-cn");
-dayjs.tz.setDefault("Asia/Shanghai");
-
 const appTheme = {
-  algorithm: theme.defaultAlgorithm,
+  algorithm: theme.darkAlgorithm,
   token: {
     colorPrimary: "#1677ff",
-    colorSuccess: "#389e0d",
-    colorError: "#cf1322",
-    colorWarning: "#d48806",
-    borderRadius: 8,
+    colorSuccess: "#2fb26a",
+    colorError: "#eb4b59",
+    colorWarning: "#e7a43b",
+    colorBgBase: "#06111f",
+    colorBgContainer: "#0b1a2d",
+    colorBorder: "#18334f",
+    borderRadius: 10,
     fontFamily:
       '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", "Segoe UI", system-ui, sans-serif',
     fontSize: 14,
@@ -40,7 +34,7 @@ const appTheme = {
     },
     Layout: {
       headerHeight: 56,
-      siderWidth: 208,
+      siderWidth: 232,
     },
   },
 };
