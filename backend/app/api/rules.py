@@ -126,3 +126,25 @@ async def list_trading_rules(
         date_from=date_from, date_to=date_to, rule_version=rule_version,
         page=page, page_size=page_size,
     ))
+
+
+@router.get("/fees")
+async def list_fee_rules(
+    exchange: str | None = Query(None, pattern="^(SH|SZ)$"),
+    board: str | None = Query(None, pattern="^(MAIN|GEM|STAR|\\*)$"),
+    security_status: str | None = Query(None, pattern="^(NORMAL|ST)$"),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    rule_version: str | None = Query(None, min_length=1, max_length=128),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    payload = _list_rule_records(
+        {"commission_rate", "minimum_commission", "stamp_duty_sell", "transfer_fee"},
+        exchange=exchange, board=board, security_status=security_status,
+        date_from=date_from, date_to=date_to, rule_version=rule_version,
+        page=page, page_size=page_size,
+    )
+    for item in payload["items"]:
+        item["direction"] = "sell" if item["rule_type"] == "stamp_duty_sell" else "both"
+    return ok(payload)

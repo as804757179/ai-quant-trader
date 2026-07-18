@@ -217,6 +217,19 @@ class QualityResultAuditTests(unittest.TestCase):
         self.assertTrue(all(item["source_hash"] is None for item in response.data["items"]))
         self.assertTrue(all(item["rule_type"] != "slippage_rate" for item in response.data["items"]))
 
+    def test_fee_rules_route_excludes_unregistered_slippage_model(self):
+        route = next(item for item in rules.router.routes if item.path == "/fees")
+        self.assertEqual(route.methods, {"GET"})
+        response = asyncio.run(rules.list_fee_rules(
+            exchange="SH", board=None, security_status=None,
+            date_from=None, date_to=None, rule_version=None, page=1, page_size=50,
+        ))
+        self.assertEqual(route_access("GET", "/api/v1/rules/fees").scope, "market:read")
+        self.assertEqual({item["rule_type"] for item in response.data["items"]}, {"commission_rate", "minimum_commission", "stamp_duty_sell", "transfer_fee"})
+        self.assertEqual(next(item for item in response.data["items"] if item["rule_type"] == "stamp_duty_sell")["direction"], "sell")
+        self.assertTrue(all(item["source_hash_status"] == "not_recorded" for item in response.data["items"]))
+        self.assertFalse(response.data["tradable"])
+
 
 if __name__ == "__main__":
     unittest.main()
