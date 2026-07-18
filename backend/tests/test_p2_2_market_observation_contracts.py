@@ -143,6 +143,36 @@ class MarketObservationContractTests(unittest.TestCase):
         self.assertEqual(route.methods, {"GET"})
         self.assertEqual(route_access("GET", "/api/v1/market/exchange-boards").scope, "market:read")
 
+    def test_market_sentiment_is_unavailable_without_observed_evidence_or_a_generated_score(self):
+        with patch("app.api.market.get_db", side_effect=AssertionError("sentiment endpoint must not fabricate a fallback score")):
+            response = asyncio.run(market.get_market_sentiment(page=2, page_size=1))
+
+        payload = response.data
+        self.assertEqual(payload["items"], [])
+        self.assertEqual(payload["availability_status"], "unavailable")
+        self.assertEqual(payload["data_semantics"], "unavailable")
+        self.assertFalse(payload["observed_only"])
+        self.assertFalse(payload["derived"])
+        self.assertFalse(payload["derived_from_observed"])
+        self.assertIsNone(payload["score"])
+        self.assertEqual(payload["evidence_refs"], [])
+        self.assertIsNone(payload["provider"])
+        self.assertIsNone(payload["source_published_at"])
+        self.assertIsNone(payload["algorithm_version"])
+        self.assertEqual(payload["formal_model"], "market.sentiment_derivations")
+        self.assertEqual(payload["lineage_contract"]["allowed_semantics"], ["derived", "derived_from_observed"])
+        self.assertTrue(payload["lineage_contract"]["observed_forbidden"])
+        self.assertFalse(payload["historical_research_usable"])
+        self.assertFalse(payload["backtest_usable"])
+        self.assertEqual(payload["research_readiness"], "not_granted")
+        self.assertFalse(payload["tradable"])
+        self.assertFalse(payload["order_created"])
+
+    def test_market_sentiment_route_requires_market_read_scope(self):
+        route = next(item for item in market.router.routes if item.path == "/sentiment")
+        self.assertEqual(route.methods, {"GET"})
+        self.assertEqual(route_access("GET", "/api/v1/market/sentiment").scope, "market:read")
+
     def test_future_models_preserve_independent_semantics_without_legacy_backfill(self):
         migration = (Path(__file__).resolve().parents[1] / "alembic" / "versions" / "041_p2_2_market_observation_semantics.py").read_text(encoding="utf-8")
         for table in ("industry_classification_observations", "concept_board_memberships", "exchange_board_observations", "sentiment_derivations"):

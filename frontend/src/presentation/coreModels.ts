@@ -561,6 +561,17 @@ export interface UnavailableMarketObservationData {
   source_version?: string;
 }
 
+export interface MarketSentimentData extends UnavailableMarketObservationData {
+  derived?: boolean;
+  derived_from_observed?: boolean;
+  score?: null;
+  evidence_refs?: string[];
+  source_published_at?: null;
+  algorithm_version?: null;
+  calculation_rule?: null;
+  lineage_contract?: { allowed_semantics?: string[]; observed_forbidden?: boolean; required_fields?: string[] };
+}
+
 export interface EquityCurvePoint {
   id?: number;
   record_time?: string;
@@ -1029,6 +1040,10 @@ export function useConceptBoards(page = 1, pageSize = 50) {
 
 export function useExchangeBoards(page = 1, pageSize = 50) {
   return useReadOnlyDisplay<MarketClassificationListData>(() => get<MarketClassificationListData>("/market/exchange-boards", { page, page_size: pageSize }), `market-exchange-board-current-snapshot-v1:p${page}:s${pageSize}`);
+}
+
+export function useMarketSentiment(page = 1, pageSize = 50) {
+  return useReadOnlyDisplay<MarketSentimentData>(() => get<MarketSentimentData>("/market/sentiment", { page, page_size: pageSize }), `market-sentiment-unavailable-v1:p${page}:s${pageSize}`);
 }
 
 export function useResearchEvidence(evidenceType: "announcement" | "news" | "financial_report", page = 1, pageSize = 50) {

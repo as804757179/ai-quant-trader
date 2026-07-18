@@ -216,6 +216,55 @@ async def list_exchange_boards(
     )
 
 
+@router.get("/sentiment")
+async def get_market_sentiment(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    """无合格原始证据时明确返回不可用，不生成或伪装情绪分数。"""
+    return ok(
+        {
+            "items": [],
+            "total": 0,
+            "page": page,
+            "page_size": page_size,
+            "has_more": False,
+            "availability_status": "unavailable",
+            "data_semantics": "unavailable",
+            "observed_only": False,
+            "derived": False,
+            "derived_from_observed": False,
+            "score": None,
+            "evidence_refs": [],
+            "provider": None,
+            "source": None,
+            "source_published_at": None,
+            "fetched_at": None,
+            "algorithm_version": None,
+            "calculation_rule": None,
+            "formal_model": "market.sentiment_derivations",
+            "lineage_contract": {
+                "allowed_semantics": ["derived", "derived_from_observed"],
+                "observed_forbidden": True,
+                "required_fields": [
+                    "evidence_refs",
+                    "provider",
+                    "source_published_at",
+                    "fetched_at",
+                    "algorithm_version",
+                    "calculation_rule",
+                ],
+            },
+            "historical_research_usable": False,
+            "backtest_usable": False,
+            "research_readiness": "not_granted",
+            "tradable": False,
+            "order_created": False,
+            "source_version": "market-sentiment-unavailable-v1",
+        }
+    )
+
+
 @router.get("/security-status")
 async def list_security_status(
     stock_code: str | None = Query(None, min_length=1, max_length=12),
