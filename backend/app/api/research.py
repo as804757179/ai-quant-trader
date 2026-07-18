@@ -40,9 +40,34 @@ class NewsEvidenceManualReviewRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=2000)
 
 
+class FinancialLocationReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    location_id: UUID
+    conclusion: Literal["confirmed", "rejected", "ambiguous", "needs_more_evidence"]
+    reason: str = Field(min_length=1, max_length=2000)
+
+
 def _news_review_request_hash(evidence_id: UUID, body: NewsEvidenceManualReviewRequest) -> str:
     payload = {
         "evidence_id": str(evidence_id),
+        "conclusion": body.conclusion,
+        "reason": body.reason.strip(),
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _financial_location_review_request_hash(
+    evidence_id: UUID,
+    body: FinancialLocationReviewRequest,
+    raw_hash: str,
+    locator_version: str,
+) -> str:
+    payload = {
+        "evidence_id": str(evidence_id),
+        "location_id": str(body.location_id),
+        "raw_hash": raw_hash,
+        "locator_version": locator_version,
         "conclusion": body.conclusion,
         "reason": body.reason.strip(),
     }
@@ -124,6 +149,45 @@ async def _find_observed_financial_location_evidence(
             """
         ),
         {"evidence_id": evidence_id},
+    )
+    row = result.mappings().one_or_none()
+    return dict(row) if row else None
+
+
+async def _find_current_financial_location_candidate(
+    db: Any, evidence_id: UUID, parse_run_id: str, location_id: UUID
+) -> dict[str, Any] | None:
+    result = await db.execute(
+        text(
+            """
+            SELECT location.location_id::text AS location_id,
+                   location.parse_run_id::text AS parse_run_id,
+                   location.page_evidence_id::text AS page_evidence_id,
+                   location.field_name, location.status AS location_status,
+                   location.locator_version,
+                   snapshot.snapshot_id::text AS snapshot_id,
+                   snapshot.observed_raw_hash AS raw_hash,
+                   page.page_number, page.extraction_status
+            FROM market.research_financial_metadata_locations AS location
+            INNER JOIN market.research_financial_report_parse_runs AS parse_run
+              ON parse_run.parse_run_id = location.parse_run_id
+            INNER JOIN market.research_financial_report_snapshots AS snapshot
+              ON snapshot.snapshot_id = parse_run.snapshot_id
+            INNER JOIN market.research_financial_report_page_evidence AS page
+              ON page.parse_run_id = location.parse_run_id
+             AND page.page_evidence_id = location.page_evidence_id
+            WHERE location.location_id = :location_id
+              AND location.parse_run_id = CAST(:parse_run_id AS uuid)
+              AND snapshot.evidence_id = :evidence_id
+              AND snapshot.status = 'observed'
+              AND page.extraction_status = 'text_observed'
+            """
+        ),
+        {
+            "location_id": location_id,
+            "parse_run_id": parse_run_id,
+            "evidence_id": evidence_id,
+        },
     )
     row = result.mappings().one_or_none()
     return dict(row) if row else None
@@ -1189,6 +1253,133 @@ async def list_financial_location_reviews(
             "source": "market.research_financial_metadata_location_reviews",
             "source_version": "financial-location-review-v1",
         }
+    )
+
+
+@router.post("/evidence/{evidence_id}/financial-location-reviews")
+async def append_financial_location_review(
+    evidence_id: UUID, body: FinancialLocationReviewRequest, request: Request
+):
+    reason = body.reason.strip()
+    principal = get_request_principal(request)
+    idempotency_key = (request.headers.get("Idempotency-Key") or "").strip()
+    if not 8 <= len(idempotency_key) <= 128:
+        error("缺少有效的 Idempotency-Key", "IDEMPOTENCY_KEY_REQUIRED", 422)
+    if not reason:
+        error("复核理由不能为空", "INVALID_FINANCIAL_LOCATION_REVIEW", 422)
+
+    async with get_db() as db:
+        evidence = await _find_observed_financial_location_evidence(db, evidence_id)
+        if evidence is None or evidence.get("parse_run_id") is None:
+            error(
+                "仅具有当前解析运行的已观察财报证据可追加页级定位复核",
+                "FINANCIAL_LOCATION_EVIDENCE_NOT_FOUND",
+                404,
+            )
+        location = await _find_current_financial_location_candidate(
+            db,
+            evidence_id,
+            str(evidence["parse_run_id"]),
+            body.location_id,
+        )
+        if location is None:
+            error(
+                "定位候选不存在、已过期或不具备可复核页级证据",
+                "FINANCIAL_LOCATION_CANDIDATE_NOT_REVIEWABLE",
+                404,
+            )
+
+        raw_hash = str(location["raw_hash"])
+        locator_version = str(location["locator_version"])
+        request_hash = _financial_location_review_request_hash(
+            evidence_id, body, raw_hash, locator_version
+        )
+        result = await db.execute(
+            text(
+                """
+                INSERT INTO market.research_financial_metadata_location_reviews (
+                    review_id, evidence_id, location_id, snapshot_id, parse_run_id,
+                    page_evidence_id, raw_hash, locator_version, reviewer_label,
+                    reviewer_principal_id, idempotency_key, request_hash,
+                    conclusion, reason
+                ) VALUES (
+                    :review_id, :evidence_id, :location_id, :snapshot_id, :parse_run_id,
+                    :page_evidence_id, :raw_hash, :locator_version, :reviewer_label,
+                    CAST(:reviewer_principal_id AS uuid), :idempotency_key, :request_hash,
+                    :conclusion, :reason
+                )
+                ON CONFLICT (reviewer_principal_id, idempotency_key) DO NOTHING
+                RETURNING review_id::text AS review_id, evidence_id::text AS evidence_id,
+                          location_id::text AS location_id, snapshot_id::text AS snapshot_id,
+                          parse_run_id::text AS parse_run_id,
+                          page_evidence_id::text AS page_evidence_id, raw_hash,
+                          locator_version, reviewer_label,
+                          reviewer_principal_id::text AS reviewer_principal_id,
+                          idempotency_key, request_hash, conclusion, reason, reviewed_at
+                """
+            ),
+            {
+                "review_id": uuid4(),
+                "evidence_id": evidence_id,
+                "location_id": body.location_id,
+                "snapshot_id": location["snapshot_id"],
+                "parse_run_id": location["parse_run_id"],
+                "page_evidence_id": location["page_evidence_id"],
+                "raw_hash": raw_hash,
+                "locator_version": locator_version,
+                "reviewer_label": principal.display_name,
+                "reviewer_principal_id": principal.principal_id,
+                "idempotency_key": idempotency_key,
+                "request_hash": request_hash,
+                "conclusion": body.conclusion,
+                "reason": reason,
+            },
+        )
+        row = result.mappings().first()
+        if row is None:
+            existing = await db.execute(
+                text(
+                    """
+                    SELECT review_id::text AS review_id, evidence_id::text AS evidence_id,
+                           location_id::text AS location_id, snapshot_id::text AS snapshot_id,
+                           parse_run_id::text AS parse_run_id,
+                           page_evidence_id::text AS page_evidence_id, raw_hash,
+                           locator_version, reviewer_label,
+                           reviewer_principal_id::text AS reviewer_principal_id,
+                           idempotency_key, request_hash, conclusion, reason, reviewed_at
+                    FROM market.research_financial_metadata_location_reviews
+                    WHERE reviewer_principal_id = CAST(:reviewer_principal_id AS uuid)
+                      AND idempotency_key = :idempotency_key
+                    """
+                ),
+                {
+                    "reviewer_principal_id": principal.principal_id,
+                    "idempotency_key": idempotency_key,
+                },
+            )
+            row = existing.mappings().one()
+            if row["request_hash"] != request_hash:
+                error(
+                    "同一 Idempotency-Key 不能绑定不同复核请求",
+                    "IDEMPOTENCY_KEY_PAYLOAD_CONFLICT",
+                    409,
+                )
+        review = serialize_review(dict(row))
+
+    return ok(
+        {
+            "evidence": serialize_review(evidence),
+            "location": serialize_review(location),
+            "item": review,
+            "review_scope": "financial_location_only",
+            "observed_only": True,
+            "research_readiness": "not_granted",
+            "tradable": False,
+            "order_created": False,
+            "source": "market.research_financial_metadata_location_reviews",
+            "source_version": "financial-location-review-v1",
+        },
+        message="财报页级定位人工复核已追加",
     )
 
 

@@ -740,7 +740,10 @@ def route_access(method: str, path: str) -> RouteAccess:
             return RouteAccess(scope="trade:broker.sync")
         if path.startswith("/api/v1/trade/approvals/") and path.endswith("/approve"):
             return RouteAccess(scope="trade:approval.approve")
-        if path.startswith("/api/v1/research/evidence/") and path.endswith("/reviews"):
+        if path.startswith("/api/v1/research/evidence/") and (
+            path.endswith("/reviews")
+            or path.endswith("/financial-location-reviews")
+        ):
             return RouteAccess(scope="research:review.append")
     if path.startswith("/api/") or path == "/metrics":
         return RouteAccess(undeclared=True, csrf_required=False)

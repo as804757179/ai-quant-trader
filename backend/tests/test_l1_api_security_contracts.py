@@ -141,6 +141,7 @@ class ApiSecurityContractTests(unittest.TestCase):
             ("POST", "/api/v1/risk/fuse/recover"): "risk:fuse.recover",
             ("POST", "/api/v1/risk/alerts/test-dingtalk"): "system:notify.test",
             ("POST", "/api/v1/research/evidence/example/reviews"): "research:review.append",
+            ("POST", "/api/v1/research/evidence/example/financial-location-reviews"): "research:review.append",
             ("POST", "/api/v1/backtest/run"): "backtest:run",
             ("POST", "/api/v1/trade/order"): "trade:order.create",
             ("POST", "/api/v1/trade/simulation/release-t1"): "trade:simulation.operate",
