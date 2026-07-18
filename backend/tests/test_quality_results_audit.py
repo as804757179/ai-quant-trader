@@ -14,6 +14,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 from app.api import data  # noqa: E402
+from app.api import market  # noqa: E402
 from app.api import rules  # noqa: E402
 from app.core.auth import route_access  # noqa: E402
 from app.data.certification import DataCertificationService  # noqa: E402
@@ -229,6 +230,18 @@ class QualityResultAuditTests(unittest.TestCase):
         self.assertEqual(next(item for item in response.data["items"] if item["rule_type"] == "stamp_duty_sell")["direction"], "sell")
         self.assertTrue(all(item["source_hash_status"] == "not_recorded" for item in response.data["items"]))
         self.assertFalse(response.data["tradable"])
+
+    def test_security_status_route_preserves_missing_price_limit_resolution(self):
+        route = next(item for item in market.router.routes if item.path == "/security-status")
+        self.assertEqual(route.methods, {"GET"})
+        db = _Db([_Result(one={"total": 1, "unresolved": 1, "provider_missing": 0, "latest_reviewed_at": None}), _Result(rows=[{"stock_code": "000001.SZ", "status": "unresolved"}])])
+        with patch("app.api.market.get_db", return_value=_DbContext(db)):
+            response = asyncio.run(market.list_security_status(stock_code=None, date_from=None, date_to=None, status=None, evidence_version=None, page=1, page_size=50))
+        self.assertEqual(route_access("GET", "/api/v1/market/security-status").scope, "market:read")
+        self.assertIsNone(response.data["items"][0]["price_limit_rule"])
+        self.assertEqual(response.data["items"][0]["resolution_status"], "not_recorded")
+        self.assertFalse(response.data["tradable"])
+        self.assertIn("ORDER BY review.effective_from DESC, review.stock_code, review.status", db.sql[1])
 
 
 if __name__ == "__main__":
