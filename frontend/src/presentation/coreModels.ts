@@ -615,6 +615,22 @@ export interface DeepAnalysisListData {
   source_version?: string;
 }
 
+export interface ResearchExclusionListData {
+  items?: Array<{ review_id?: string; stock_code?: string; readiness_status?: string; research_use_scope?: string; requirement_profile?: string; unresolved_fields?: string[]; rejected_fields?: string[]; corporate_action_status?: string; missingness_status?: string; provider_validation_status?: string; review_reason?: string; policy_version?: string; reviewer_version?: string; reviewed_at?: string | null }>;
+  total?: number;
+  page?: number;
+  page_size?: number;
+  has_more?: boolean;
+  summary?: { review_required?: number; rejected?: number; latest_reviewed_at?: string | null };
+  risk_events_included?: boolean;
+  observed_only?: boolean;
+  research_readiness?: string;
+  tradable?: boolean;
+  order_created?: boolean;
+  source?: string;
+  source_version?: string;
+}
+
 export interface FinancialLocationReviewListData {
   items?: Array<{ review_id?: string; location_id?: string; conclusion?: string; reason?: string; reviewed_at?: string; reviewer_label?: string; field_name?: string; location_status?: string; page_number?: number }>;
   total?: number;
@@ -948,6 +964,10 @@ export function useResearchEvidence(evidenceType: "announcement" | "news" | "fin
 
 export function useDeepAnalysis(page = 1, pageSize = 50, stockCode?: string, evidenceType?: "announcement" | "news" | "financial_report") {
   return useReadOnlyDisplay<DeepAnalysisListData>(() => get<DeepAnalysisListData>("/research/deep-analysis", { page, page_size: pageSize, stock_code: stockCode, evidence_type: evidenceType }), `research-deep-analysis-v1:p${page}:s${pageSize}:${stockCode ?? "all"}:${evidenceType ?? "all"}`);
+}
+
+export function useResearchExclusions(page = 1, pageSize = 50, stockCode?: string, readinessStatus?: "review_required" | "rejected", researchUseScope?: string) {
+  return useReadOnlyDisplay<ResearchExclusionListData>(() => get<ResearchExclusionListData>("/research/exclusions", { page, page_size: pageSize, stock_code: stockCode, readiness_status: readinessStatus, research_use_scope: researchUseScope }), `research-exclusions-v1:p${page}:s${pageSize}:${stockCode ?? "all"}:${readinessStatus ?? "all"}:${researchUseScope ?? "all"}`);
 }
 
 export function useResearchEvidenceDetail(evidenceId?: string) {

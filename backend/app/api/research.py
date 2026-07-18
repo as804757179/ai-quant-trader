@@ -1650,3 +1650,82 @@ async def list_deep_analysis(
             "source_version": "research-deep-analysis-v1",
         }
     )
+
+
+@router.get("/exclusions")
+async def list_research_exclusions(
+    stock_code: str | None = Query(None),
+    readiness_status: Literal["review_required", "rejected"] | None = Query(None),
+    research_use_scope: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    """只读返回未通过资格审核的事实，不扩展为风险或交易结论。"""
+    filters = ["review.readiness_status IN ('review_required', 'rejected')"]
+    params: dict[str, Any] = {"limit": page_size, "offset": (page - 1) * page_size}
+    if stock_code:
+        filters.append("review.stock_code = :stock_code")
+        params["stock_code"] = stock_code.strip().upper()
+    if readiness_status:
+        filters.append("review.readiness_status = :readiness_status")
+        params["readiness_status"] = readiness_status
+    if research_use_scope:
+        filters.append("review.research_use_scope = :research_use_scope")
+        params["research_use_scope"] = research_use_scope
+    where_clause = " AND ".join(filters)
+    async with get_db() as db:
+        summary_result = await db.execute(
+            text(
+                f"""
+                SELECT COUNT(*) AS total,
+                       COUNT(*) FILTER (WHERE review.readiness_status = 'review_required') AS review_required,
+                       COUNT(*) FILTER (WHERE review.readiness_status = 'rejected') AS rejected,
+                       MAX(review.reviewed_at) AS latest_reviewed_at
+                FROM market.research_readiness_reviews AS review
+                WHERE {where_clause}
+                """
+            ),
+            params,
+        )
+        summary = dict(summary_result.mappings().one())
+        result = await db.execute(
+            text(
+                f"""
+                SELECT review.review_id, review.stock_code, review.readiness_status,
+                       review.research_use_scope, review.requirement_profile,
+                       review.unresolved_fields, review.rejected_fields,
+                       review.corporate_action_status, review.missingness_status,
+                       review.provider_validation_status, review.review_reason,
+                       review.policy_version, review.reviewer_version, review.reviewed_at
+                FROM market.research_readiness_reviews AS review
+                WHERE {where_clause}
+                ORDER BY review.reviewed_at DESC, review.review_id DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            params,
+        )
+        items = [serialize_review(dict(row)) for row in result.mappings().all()]
+
+    total = int(summary["total"] or 0)
+    return ok(
+        {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "has_more": params["offset"] + len(items) < total,
+            "summary": {
+                "review_required": int(summary["review_required"] or 0),
+                "rejected": int(summary["rejected"] or 0),
+                "latest_reviewed_at": _json_value(summary["latest_reviewed_at"]),
+            },
+            "risk_events_included": False,
+            "observed_only": True,
+            "research_readiness": "not_granted",
+            "tradable": False,
+            "order_created": False,
+            "source": "market.research_readiness_reviews",
+            "source_version": "research-exclusions-v1",
+        }
+    )

@@ -112,6 +112,67 @@ class ResearchAggregationContractTests(unittest.TestCase):
         self.assertEqual(route.methods, {"GET"})
         self.assertEqual(route_access("GET", "/api/v1/research/deep-analysis").scope, "research:read")
 
+    def test_research_exclusions_preserve_field_level_review_facts(self):
+        reviewed_at = datetime(2026, 7, 18, tzinfo=timezone.utc)
+        db = _Db(
+            _Result(
+                {
+                    "total": 2,
+                    "review_required": 1,
+                    "rejected": 1,
+                    "latest_reviewed_at": reviewed_at,
+                }
+            ),
+            _Result(
+                [
+                    {
+                        "review_id": "review-1",
+                        "stock_code": "600000.SH",
+                        "readiness_status": "rejected",
+                        "research_use_scope": "return_backtest",
+                        "unresolved_fields": ["close"],
+                        "rejected_fields": ["amount"],
+                        "reviewed_at": reviewed_at,
+                    }
+                ]
+            ),
+        )
+        with patch("app.api.research.get_db", return_value=_DbContext(db)):
+            response = asyncio.run(
+                research.list_research_exclusions(
+                    stock_code="600000.sh",
+                    readiness_status="rejected",
+                    research_use_scope="return_backtest",
+                    page=2,
+                    page_size=1,
+                )
+            )
+
+        payload = response.data
+        self.assertEqual(payload["items"][0]["rejected_fields"], ["amount"])
+        self.assertEqual(payload["summary"]["rejected"], 1)
+        self.assertFalse(payload["risk_events_included"])
+        self.assertTrue(payload["observed_only"])
+        self.assertEqual(payload["research_readiness"], "not_granted")
+        self.assertFalse(payload["tradable"])
+        self.assertEqual(db.params[0]["stock_code"], "600000.SH")
+        self.assertEqual(db.params[1]["research_use_scope"], "return_backtest")
+        self.assertIn("market.research_readiness_reviews", db.sql[0])
+        self.assertIn("ORDER BY review.reviewed_at DESC, review.review_id DESC", db.sql[1])
+        self.assertNotIn("risk.risk_events", db.sql[1])
+        self.assertFalse(
+            any(
+                f"{operation} " in statement.upper()
+                for statement in db.sql
+                for operation in ("INSERT", "UPDATE", "DELETE")
+            )
+        )
+
+    def test_research_exclusions_route_requires_research_read_scope(self):
+        route = next(item for item in research.router.routes if item.path == "/exclusions")
+        self.assertEqual(route.methods, {"GET"})
+        self.assertEqual(route_access("GET", "/api/v1/research/exclusions").scope, "research:read")
+
 
 if __name__ == "__main__":
     unittest.main()

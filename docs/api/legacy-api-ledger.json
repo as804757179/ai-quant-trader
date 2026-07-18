@@ -2,7 +2,7 @@
   "ledger_version": "2026-07-18",
   "governance_plan": "docs/superpowers/specs/2026-07-16-legacy-api-clearance-and-new-api-entry-gate.md",
   "original_total_expected": 76,
-  "total_expected": 112,
+  "total_expected": 113,
   "consumer_registry": {
     "frontend.core_models": {
       "source": "frontend/src/presentation/coreModels.ts",
@@ -45,7 +45,7 @@
     "main_http": {
       "system": "backend",
       "transport": "http",
-      "expected_count": 96,
+      "expected_count": 97,
       "interfaces": [
         {"id": "backend.stock.market-status.get", "method": "GET", "path": "/api/v1/stock/market/status", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
         {"id": "backend.stock.market-batches.get", "method": "GET", "path": "/api/v1/stock/market/batches", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
@@ -137,6 +137,7 @@
         {"id": "backend.research.financial-location-reviews.get", "method": "GET", "path": "/api/v1/research/evidence/{evidence_id}/financial-location-reviews", "owner": "research", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
         {"id": "backend.research.financial-location-reviews.post", "method": "POST", "path": "/api/v1/research/evidence/{evidence_id}/financial-location-reviews", "owner": "research", "risk_level": "write", "disposition": "admin", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_contract"},
         {"id": "backend.research.deep-analysis.get", "method": "GET", "path": "/api/v1/research/deep-analysis", "owner": "research", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": ["analysis_conclusion_not_generated"], "verification": "route_and_frontend_contract"},
+        {"id": "backend.research.exclusions.get", "method": "GET", "path": "/api/v1/research/exclusions", "owner": "research", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": ["risk_events_excluded"], "verification": "route_and_frontend_contract"},
         {"id": "backend.data.certified-klines.get", "method": "GET", "path": "/api/v1/data/certified-klines", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
         {"id": "backend.data.certification-batches.get", "method": "GET", "path": "/api/v1/data/certification-batches", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
         {"id": "backend.data.quality-results.get", "method": "GET", "path": "/api/v1/data/quality-results", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
