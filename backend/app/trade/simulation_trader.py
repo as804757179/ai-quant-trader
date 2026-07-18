@@ -126,8 +126,6 @@ class SimulationTrader(BaseTrader):
             limit_price=request.limit_price,
         )
 
-        await self._maybe_release_t1()
-
         # —— 交易时段 ——
         allow_off = bool(getattr(settings, "SIM_ALLOW_OFF_HOURS", True))
         in_session = is_order_accept_time()
@@ -230,7 +228,7 @@ class SimulationTrader(BaseTrader):
                 )
 
         signal_id = request.signal_id or "manual"
-        idempotency_key = build_idempotency_key(
+        idempotency_key = request.idempotency_key or build_idempotency_key(
             mode=self.mode,
             signal_id=signal_id,
             stock_code=code,
@@ -238,6 +236,8 @@ class SimulationTrader(BaseTrader):
             quantity=request.quantity,
             order_type=request.order_type,
             limit_price=request.limit_price,
+            principal_id=request.principal_id,
+            client_intent_key=request.client_intent_key,
         )
 
         await self._execute_fill_transaction(
@@ -269,6 +269,7 @@ class SimulationTrader(BaseTrader):
         return OrderResult(
             order_id=order_id,
             status="FILLED",
+            filled_quantity=request.quantity,
             message=(
                 f"模拟成交[{src_note}]：{request.side} {request.quantity}股 "
                 f"@{fill_price:.2f} 佣金¥{commission:.2f}"
@@ -281,7 +282,7 @@ class SimulationTrader(BaseTrader):
         self, order_id: str, request: OrderRequest, code: str
     ) -> None:
         signal_id = request.signal_id or "manual"
-        idempotency_key = build_idempotency_key(
+        idempotency_key = request.idempotency_key or build_idempotency_key(
             mode=self.mode,
             signal_id=signal_id,
             stock_code=code,
@@ -289,6 +290,8 @@ class SimulationTrader(BaseTrader):
             quantity=request.quantity,
             order_type=request.order_type,
             limit_price=request.limit_price,
+            principal_id=request.principal_id,
+            client_intent_key=request.client_intent_key,
         )
         await self.db.execute(
             text(
@@ -587,7 +590,6 @@ class SimulationTrader(BaseTrader):
         )
 
     async def get_positions(self) -> list[Position]:
-        await self._maybe_release_t1()
         result = await self.db.execute(
             text("SELECT * FROM trade.positions WHERE mode = :mode"),
             {"mode": self.mode},
@@ -632,7 +634,6 @@ class SimulationTrader(BaseTrader):
 
     async def sync_positions(self) -> None:
         """用真实行情刷新持仓市值。"""
-        await self._maybe_release_t1()
         positions = await self.get_positions()
         for pos in positions:
             snap = await self._resolve_market(pos.stock_code)

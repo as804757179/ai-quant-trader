@@ -53,6 +53,7 @@ class AnalyzeResponseData(BaseModel):
 
 class SignalListItem(BaseModel):
     id: str
+    record_type: str = "signal"
     stock_code: str
     action: str
     confidence: float
@@ -63,6 +64,14 @@ class SignalListItem(BaseModel):
     valid_until: str | None = None
     status: str = "active"
     data_quality_score: float | None = None
+    historical_data_status: str = "unknown"
+    current_validity_status: str = "unknown"
+    recorded_context_status: str = "unknown"
+    data_authorization_status: str = "not_granted"
+    recommendation_only: bool = True
+    tradable: bool = False
+    research_eligible: bool = False
+    order_created: bool = False
 
 
 class SignalListResponse(BaseModel):

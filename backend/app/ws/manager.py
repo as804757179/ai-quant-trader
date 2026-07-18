@@ -129,9 +129,11 @@ class WebSocketManager:
         if not clients:
             return 0
 
+        event = dict(data)
+        event.setdefault("event_version", "1")
         payload = json.dumps(
             {
-                **data,
+                **event,
                 "_channel": channel,
                 "_ts": now_cn_iso(),
             },

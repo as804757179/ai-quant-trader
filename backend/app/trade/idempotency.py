@@ -14,6 +14,9 @@ def build_idempotency_key(
     quantity: int,
     order_type: str = "LIMIT",
     limit_price: float | None = None,
+    principal_id: str | None = None,
+    client_intent_key: str | None = None,
+    intent_id: str | None = None,
 ) -> str:
     """
     生成稳定幂等键（≤64 字符）。
@@ -29,6 +32,8 @@ def build_idempotency_key(
         else "MKT"
     )
     raw = (
+        f"{principal_id or 'legacy'}|{client_intent_key or 'legacy'}|"
+        f"{intent_id or 'legacy'}|"
         f"{mode}|{sid}|{stock_code}|{side.upper()}|"
         f"{order_type.upper()}|{int(quantity)}|{price_part}"
     )

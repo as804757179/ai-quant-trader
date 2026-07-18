@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -35,6 +35,7 @@ class PreTradeRiskChecker:
         self.monitor = monitor
         self._rules_loaded = False
         self.thresholds: dict[str, float] = {}
+        self._rules_load_error: str | None = None
 
     async def _ensure_thresholds(self) -> None:
         if self._rules_loaded:
@@ -67,32 +68,90 @@ class PreTradeRiskChecker:
                     self.thresholds[code] = float(row["threshold"])
         except Exception as exc:
             logger.warning("risk_rules_load_failed", error=str(exc))
+            self.thresholds = {}
+            self._rules_load_error = "RISK_RULES_UNAVAILABLE"
         self._rules_loaded = True
 
-    async def check(self, order_request: dict, mode: str) -> RiskCheckReport:
+    async def check(
+        self,
+        order_request: dict,
+        mode: str,
+        *,
+        record_events: bool = True,
+    ) -> RiskCheckReport:
         await self._ensure_thresholds()
-        checks: list[CheckResult] = []
-        stock = await self._get_stock(order_request["stock_code"])
-        if stock is None:
+        if self._rules_load_error:
             return RiskCheckReport(
                 passed=False,
-                blocked_by=["STOCK_NOT_FOUND"],
+                blocked_by=[self._rules_load_error],
                 checks=[
                     CheckResult(
-                        "STOCK_NOT_FOUND",
+                        self._rules_load_error,
                         False,
                         "BLOCK",
-                        "股票代码不存在",
+                        "风险规则不可验证，禁止下单",
                         0,
                         0,
                     )
                 ],
             )
+        checks: list[CheckResult] = []
+        stock = await self._get_stock(order_request["stock_code"])
+        if stock is None:
+            missing = CheckResult(
+                "STOCK_NOT_FOUND",
+                False,
+                "BLOCK",
+                "股票代码不存在",
+                0,
+                0,
+            )
+            if record_events:
+                await self._log_risk_event(missing, order_request, mode)
+            return RiskCheckReport(
+                passed=False,
+                blocked_by=["STOCK_NOT_FOUND"],
+                checks=[missing],
+            )
+
+        observed_quote = await self._get_observed_quote(order_request["stock_code"])
+        if observed_quote is None:
+            unavailable = CheckResult(
+                rule_code="OBSERVED_QUOTE_UNAVAILABLE",
+                passed=False,
+                severity="BLOCK",
+                message="缺少新鲜且已验证来源的观测报价，禁止继续执行",
+                actual_value=0,
+                threshold=0,
+            )
+            if record_events:
+                await self._log_risk_event(unavailable, order_request, mode)
+            return RiskCheckReport(
+                passed=False,
+                blocked_by=["OBSERVED_QUOTE_UNAVAILABLE"],
+                checks=[unavailable],
+            )
 
         portfolio = await self.monitor.get_portfolio_snapshot(mode)
+        if portfolio.get("valuation_status") not in {"observed", "cash_only"}:
+            unavailable = CheckResult(
+                rule_code="PORTFOLIO_VALUATION_UNAVAILABLE",
+                passed=False,
+                severity="BLOCK",
+                message="组合估值缺少新鲜账户或观测行情，禁止继续执行",
+                actual_value=0,
+                threshold=0,
+            )
+            if record_events:
+                await self._log_risk_event(unavailable, order_request, mode)
+            return RiskCheckReport(
+                passed=False,
+                blocked_by=["PORTFOLIO_VALUATION_UNAVAILABLE"],
+                checks=[unavailable],
+            )
         price = order_request.get("limit_price")
         if price is None:
-            price = await self._get_current_price(order_request["stock_code"])
+            price = observed_quote.get("price")
         try:
             price_f = float(price) if price is not None else 0.0
         except (TypeError, ValueError):
@@ -108,7 +167,8 @@ class PreTradeRiskChecker:
                 actual_value=price_f,
                 threshold=0,
             )
-            await self._log_risk_event(invalid, order_request, mode)
+            if record_events:
+                await self._log_risk_event(invalid, order_request, mode)
             return RiskCheckReport(
                 passed=False,
                 blocked_by=["INVALID_PRICE"],
@@ -127,7 +187,11 @@ class PreTradeRiskChecker:
             )
             checks.append(await self._check_total_position(order_value, portfolio))
             checks.extend(
-                await self._check_liquidity(order_request["stock_code"], order_value)
+                await self._check_liquidity(
+                    order_request["stock_code"],
+                    order_value,
+                    quote=observed_quote,
+                )
             )
             checks.append(
                 await self._check_sector_concentration(stock, order_value, portfolio)
@@ -140,9 +204,10 @@ class PreTradeRiskChecker:
         blocked = [c.rule_code for c in checks if not c.passed and c.severity == "BLOCK"]
         warnings = [c.rule_code for c in checks if not c.passed and c.severity == "WARN"]
 
-        for check in checks:
-            if not check.passed:
-                await self._log_risk_event(check, order_request, mode)
+        if record_events:
+            for check in checks:
+                if not check.passed:
+                    await self._log_risk_event(check, order_request, mode)
 
         return RiskCheckReport(
             passed=len(blocked) == 0,
@@ -281,11 +346,16 @@ class PreTradeRiskChecker:
             threshold=threshold,
         )
 
-    async def _check_liquidity(self, stock_code: str, order_value: float) -> list[CheckResult]:
-        quote = await self._get_today_quote(stock_code)
+    async def _check_liquidity(
+        self,
+        stock_code: str,
+        order_value: float,
+        *,
+        quote: dict,
+    ) -> list[CheckResult]:
         results: list[CheckResult] = []
         threshold = self.thresholds["MIN_DAILY_AMOUNT"]
-        daily_amount = float(quote.get("amount", 0) if quote else 0)
+        daily_amount = float(quote.get("amount", 0))
         passed = daily_amount >= threshold
         results.append(
             CheckResult(
@@ -328,18 +398,36 @@ class PreTradeRiskChecker:
         row = result.mappings().first()
         return dict(row) if row else None
 
-    async def _get_current_price(self, code: str) -> float:
-        quote = await self._get_today_quote(code)
-        return float(quote.get("price", 0)) if quote else 0.0
-
-    async def _get_today_quote(self, code: str) -> dict | None:
-        from app.data.service import DataService
-
-        svc = DataService()
-        try:
-            return await svc.get_quote(code)
-        finally:
-            await svc.close()
+    async def _get_observed_quote(self, code: str) -> dict | None:
+        freshness_seconds = max(60, int(settings.DATA_CACHE_TTL_QUOTE) * 3)
+        cutoff = datetime.now(UTC) - timedelta(seconds=freshness_seconds)
+        result = await self.db.execute(
+            text(
+                """
+                SELECT q.price, q.amount, q.time AS quote_time,
+                       provenance.provider, provenance.source,
+                       provenance.raw_hash, provenance.received_at,
+                       batch.batch_id::text AS batch_id
+                FROM market.quotes AS q
+                INNER JOIN market.quote_provenance AS provenance
+                    ON provenance.stock_code = q.stock_code
+                   AND provenance.quote_time = q.time
+                INNER JOIN market.quote_batches AS batch
+                    ON batch.batch_id = provenance.batch_id
+                WHERE q.stock_code = :code
+                  AND provenance.quality_status = 'pass'
+                  AND provenance.fallback_used = FALSE
+                  AND batch.status IN ('success', 'partial')
+                  AND q.price > 0
+                  AND q.time >= :cutoff
+                ORDER BY q.time DESC
+                LIMIT 1
+                """
+            ),
+            {"code": code, "cutoff": cutoff},
+        )
+        row = result.mappings().first()
+        return dict(row) if row else None
 
     async def _get_today_order_count(self, mode: str) -> int:
         result = await self.db.execute(

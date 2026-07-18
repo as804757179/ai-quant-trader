@@ -3,8 +3,17 @@ import { formatChinaDateTime } from "./timeCore.mjs";
 function createProvenance(sourceVersion, provenance = {}) {
   return {
     dataCutoff: provenance.dataCutoff ?? formatChinaDateTime(new Date()),
-    sourceVersion,
+    sourceVersion: provenance.sourceVersion ?? sourceVersion,
     traceId: provenance.traceId ?? "待接入",
+  };
+}
+
+function responseProvenance(response, sourceVersion) {
+  const data = response?.data && typeof response.data === "object" ? response.data : {};
+  return {
+    dataCutoff: formatChinaDateTime(data.data_cutoff ?? response?.timestamp),
+    sourceVersion: data.source_version ?? sourceVersion,
+    traceId: data.trace_id ?? response?.requestId ?? "待接入",
   };
 }
 
@@ -29,12 +38,12 @@ export function loadingState(message = "加载中", sourceVersion = "待接入")
   };
 }
 
-export function emptyState(data, message = "暂无数据", sourceVersion = "待接入") {
+export function emptyState(data, message = "暂无数据", sourceVersion = "待接入", provenance) {
   return {
     kind: "empty",
     data,
     message,
-    provenance: createProvenance(sourceVersion),
+    provenance: createProvenance(sourceVersion, provenance),
   };
 }
 
@@ -96,14 +105,15 @@ function getErrorStatus(error) {
 export async function readOptional(loader, sourceVersion) {
   try {
     const response = await loader();
+    const provenance = responseProvenance(response, sourceVersion);
     if (isEmptyData(response.data)) {
-      return emptyState(response.data, "暂无数据", sourceVersion);
+      return emptyState(response.data, "暂无数据", sourceVersion, provenance);
     }
-    return liveState(response.data, sourceVersion);
+    return liveState(response.data, sourceVersion, provenance);
   } catch (error) {
     if (getErrorStatus(error) === 401 || getErrorStatus(error) === 403) {
       return forbiddenState("无权限", sourceVersion);
     }
-    return unavailableState("接口暂不可用", sourceVersion);
+    return unavailableState(error?.message || "接口暂不可用", sourceVersion);
   }
 }

@@ -11,7 +11,7 @@ from app.ai.orchestrator import AgentOrchestrator
 from app.ai.schemas import AgentResult
 from app.core.config import settings
 from app.core.logging import FEATURE_AI, get_logger
-from app.data.service import DataService
+from app.data.service import AI_CONTEXT_POLICY_VERSION, DataService
 from app.db import get_db
 from app.schemas.ai import (
     AgentResultSummary,
@@ -68,19 +68,18 @@ class AIService:
             strategy_id=strategy_id,
         )
 
+        context = await self._load_analysis_context(code)
         if not force_refresh:
-            cached = await self.get_valid_signal(code)
+            cached = await self.get_valid_signal(code, context=context)
             if cached:
                 logger.info("ai_analyze_cache_hit", stock_code=code, signal_id=cached.signal_id)
                 return cached
 
-        try:
-            context = await self.data_service.get_full_context(code)
-        except Exception as exc:
-            logger.error("ai_context_failed", stock_code=code, error=str(exc), exc_info=True)
-            raise AnalysisError("数据上下文构建失败", 503) from exc
+        context_ready = self._is_analysis_context_ready(context)
+        if not context_ready:
+            context["analysis_context_status"] = "blocked"
 
-        if not context.get("price"):
+        if context_ready and not context.get("price"):
             raise AnalysisError(f"无法获取股票 {code} 的有效行情数据", 503)
 
         try:
@@ -107,6 +106,11 @@ class AIService:
             signal["confidence"] = 0.0
             signal["reason"] = "当前历史数据未认证，仅可用于展示，不可用于交易判断。"
             signal["historical_data_status"] = historical_data_status
+        elif not context_ready:
+            signal = result["signal"]
+            signal["action"] = "HOLD"
+            signal["confidence"] = 0.0
+            signal["reason"] = self._analysis_context_warning(context)
 
         signal_id = await self._save_signal(
             code=code,
@@ -114,6 +118,9 @@ class AIService:
             strategy_id=strategy_id,
             data_quality_score=context.get("data_quality_score"),
             historical_data_status=historical_data_status,
+            analysis_context_status="ready" if context_ready else "blocked",
+            analysis_context_sources=context.get("analysis_context_sources") or {},
+            analysis_context_blockers=context.get("analysis_context_blockers") or [],
         )
 
         response = self._build_response(
@@ -122,6 +129,7 @@ class AIService:
             signal_id=signal_id,
             data_quality_score=context.get("data_quality_score"),
             historical_data_status=historical_data_status,
+            analysis_context_status="ready" if context_ready else "blocked",
         )
         logger.info(
             "ai_analyze_done",
@@ -134,7 +142,36 @@ class AIService:
         await self._maybe_publish_signal(code, response)
         return response
 
-    async def get_valid_signal(self, code: str) -> AnalyzeResponseData | None:
+    async def _load_analysis_context(self, code: str) -> dict[str, Any]:
+        try:
+            return await self.data_service.get_full_context(code)
+        except Exception as exc:
+            logger.error("ai_context_failed", stock_code=code, error=str(exc), exc_info=True)
+            raise AnalysisError("数据上下文构建失败", 503) from exc
+
+    @staticmethod
+    def _is_analysis_context_ready(context: dict[str, Any]) -> bool:
+        return (
+            context.get("analysis_context_policy_version") == AI_CONTEXT_POLICY_VERSION
+            and context.get("analysis_context_status") == "ready"
+        )
+
+    @staticmethod
+    def _analysis_context_warning(context: dict[str, Any]) -> str:
+        blockers = context.get("analysis_context_blockers") or []
+        source_names = sorted(
+            {
+                str(item.get("source"))
+                for item in blockers
+                if isinstance(item, dict) and item.get("source")
+            }
+        )
+        source_summary = ", ".join(source_names) if source_names else "关键数据或研究资格"
+        return f"{source_summary} 未通过当前数据与研究资格门禁，仅返回 HOLD。"
+
+    async def get_valid_signal(
+        self, code: str, *, context: dict[str, Any] | None = None
+    ) -> AnalyzeResponseData | None:
         async with get_db() as db:
             row = await db.execute(
                 text(
@@ -163,6 +200,18 @@ class AIService:
         if isinstance(agent_votes, str):
             agent_votes = json.loads(agent_votes)
 
+        analysis_context_status = raw_output.get("analysis_context_status")
+        if raw_output.get("analysis_context_policy_version") != AI_CONTEXT_POLICY_VERSION:
+            logger.info("ai_signal_cache_policy_mismatch", stock_code=code)
+            return None
+        if analysis_context_status == "ready":
+            if context is None or not self._is_analysis_context_ready(context):
+                logger.info("ai_signal_cache_context_not_ready", stock_code=code)
+                return None
+        elif analysis_context_status != "blocked":
+            logger.info("ai_signal_cache_context_unknown", stock_code=code)
+            return None
+
         scores = raw_output.get("scores") or {}
         agent_results = self._agent_votes_to_summaries(agent_votes)
         historical_data_status = raw_output.get("historical_data_status") or "unknown"
@@ -175,6 +224,11 @@ class AIService:
             confidence = 0.0
             reason = "当前历史数据未认证，仅可用于展示，不可用于交易判断。"
             warning = reason
+        elif analysis_context_status == "blocked":
+            action = "HOLD"
+            confidence = 0.0
+            warning = "当前数据或研究资格未通过门禁，仅返回 HOLD。"
+            reason = warning
 
         signal = SignalPayload(
             id=str(record["id"]),
@@ -205,10 +259,14 @@ class AIService:
             signal_id=str(record["id"]),
             data_quality_score=raw_output.get("data_quality_score"),
             historical_data_status=historical_data_status,
-            tradable=historical_data_status == "certified",
+            tradable=False,
             order_created=False,
             warning=warning,
         )
+
+    async def get_current_valid_signal(self, code: str) -> AnalyzeResponseData | None:
+        context = await self._load_analysis_context(code.strip())
+        return await self.get_valid_signal(code, context=context)
 
     async def _save_signal(
         self,
@@ -217,6 +275,9 @@ class AIService:
         strategy_id: int | None,
         data_quality_score: float | None,
         historical_data_status: str = "unknown",
+        analysis_context_status: str = "blocked",
+        analysis_context_sources: dict[str, str] | None = None,
+        analysis_context_blockers: list[dict[str, Any]] | None = None,
     ) -> str:
         signal = result["signal"]
         agent_results: dict[str, AgentResult] = result.get("agent_results", {})
@@ -231,11 +292,19 @@ class AIService:
             "latency_ms": result.get("latency_ms", 0),
             "data_quality_score": data_quality_score,
             "historical_data_status": historical_data_status,
+            "analysis_context_policy_version": AI_CONTEXT_POLICY_VERSION,
+            "analysis_context_status": analysis_context_status,
+            "analysis_context_sources": analysis_context_sources or {},
+            "analysis_context_blockers": analysis_context_blockers or [],
         }
 
         signal_id = signal.get("id")
         valid_until = signal.get("valid_until")
         signal_time = signal.get("signal_time") or datetime.utcnow().isoformat()
+        if isinstance(signal_time, str):
+            signal_time = datetime.fromisoformat(signal_time.replace("Z", "+00:00"))
+        if isinstance(valid_until, str):
+            valid_until = datetime.fromisoformat(valid_until.replace("Z", "+00:00"))
 
         async with get_db() as db:
             insert = await db.execute(
@@ -246,10 +315,10 @@ class AIService:
                         price_at, reason, agent_votes, raw_agent_output,
                         signal_time, valid_until, status
                     ) VALUES (
-                        COALESCE(:id::uuid, uuid_generate_v4()),
+                        COALESCE(CAST(:id AS uuid), uuid_generate_v4()),
                         :stock_code, :strategy_id, :action, :confidence, :risk_level,
-                        :price_at, :reason, :agent_votes::jsonb, :raw_agent_output::jsonb,
-                        :signal_time::timestamptz, :valid_until::timestamptz, 'active'
+                        :price_at, :reason, CAST(:agent_votes AS jsonb), CAST(:raw_agent_output AS jsonb),
+                        CAST(:signal_time AS timestamptz), CAST(:valid_until AS timestamptz), 'active'
                     )
                     RETURNING id
                     """
@@ -284,9 +353,9 @@ class AIService:
                             input_tokens, output_tokens, latency_ms,
                             status, error_msg, output
                         ) VALUES (
-                            :signal_id::uuid, :stock_code, :agent_name, :model_used,
+                            CAST(:signal_id AS uuid), :stock_code, :agent_name, :model_used,
                             :input_tokens, :output_tokens, :latency_ms,
-                            :status, :error_msg, :output::jsonb
+                            :status, :error_msg, CAST(:output AS jsonb)
                         )
                         """
                     ),
@@ -316,6 +385,7 @@ class AIService:
         signal_id: str,
         data_quality_score: float | None,
         historical_data_status: str = "unknown",
+        analysis_context_status: str = "blocked",
     ) -> AnalyzeResponseData:
         signal_data = result["signal"]
         agent_results_raw: dict[str, AgentResult] = result.get("agent_results", {})
@@ -348,6 +418,8 @@ class AIService:
         warning = None
         if historical_data_status != "certified":
             warning = "当前历史数据未认证，仅可用于展示，不可用于交易判断。"
+        elif analysis_context_status != "ready":
+            warning = "当前数据或研究资格未通过门禁，仅返回 HOLD。"
         return AnalyzeResponseData(
             code=code,
             signal=signal,
@@ -360,7 +432,7 @@ class AIService:
             signal_id=signal_id,
             data_quality_score=data_quality_score,
             historical_data_status=historical_data_status,
-            tradable=historical_data_status == "certified",
+            tradable=False,
             order_created=False,
             warning=warning,
         )
@@ -422,11 +494,21 @@ class AIService:
             rows = await db.execute(
                 text(
                     f"""
-                    SELECT id, stock_code, action, confidence, risk_level, price_at,
-                           reason, signal_time, valid_until, status, raw_agent_output
-                    FROM ai.signals
+                    SELECT s.id, s.stock_code, s.action, s.confidence, s.risk_level,
+                           s.price_at, s.reason, s.signal_time, s.valid_until, s.status,
+                           s.raw_agent_output,
+                           CASE
+                               WHEN COALESCE(s.status, 'inactive') <> 'active' THEN 'inactive'
+                               WHEN s.valid_until IS NULL THEN 'missing_valid_until'
+                               WHEN s.valid_until <= NOW() THEN 'expired'
+                               ELSE 'active'
+                           END AS current_validity_status,
+                           EXISTS(
+                               SELECT 1 FROM trade.orders o WHERE o.signal_id = s.id
+                           ) AS order_created
+                    FROM ai.signals s
                     WHERE {where_clause} AND confidence >= :min_confidence
-                    ORDER BY signal_time DESC
+                    ORDER BY s.signal_time DESC, s.id DESC
                     LIMIT :limit OFFSET :offset
                     """
                 ),
@@ -525,6 +607,7 @@ class AIService:
         raw = self._parse_raw_output(row.get("raw_agent_output"))
         return SignalListItem(
             id=str(row["id"]),
+            record_type="signal",
             stock_code=row["stock_code"],
             action=row["action"],
             confidence=float(row["confidence"]),
@@ -539,6 +622,14 @@ class AIService:
             else None,
             status=row.get("status", "active"),
             data_quality_score=raw.get("data_quality_score"),
+            historical_data_status=raw.get("historical_data_status") or "unknown",
+            current_validity_status=row.get("current_validity_status") or "unknown",
+            recorded_context_status=raw.get("analysis_context_status") or "unknown",
+            data_authorization_status="not_granted",
+            recommendation_only=True,
+            tradable=False,
+            research_eligible=False,
+            order_created=bool(row.get("order_created")),
         )
 
     def _row_to_history_item(self, row: dict[str, Any]) -> SignalHistoryItem:

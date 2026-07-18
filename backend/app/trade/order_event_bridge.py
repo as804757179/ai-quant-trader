@@ -66,7 +66,9 @@ class OrderEventBridge:
                 row = await db.execute(
                     text(
                         """
-                        SELECT id, status FROM trade.orders
+                        SELECT id, stock_code, side, quantity, status,
+                               filled_quantity, avg_fill_price, commission, broker_order_id
+                        FROM trade.orders
                         WHERE broker_order_id = :bid AND mode = :mode
                         ORDER BY created_at DESC
                         LIMIT 1
@@ -85,25 +87,43 @@ class OrderEventBridge:
 
                 adapter = self._adapter_for_mode(mode)
                 syncer = OrderSyncService(db, adapter, mode=mode)
-                # 用 query 路径统一更新；若 query 不到则直接用回调数据
+                # 用 query 路径统一更新；只有累计订单快照可直接作为兜底。
                 detail = await syncer.sync_order_by_id(str(local["id"]))
-                if not detail.get("changed") and broker_order.status != local["status"]:
-                    # query 可能仍返回旧状态，强制用回调写入
+                callback_filled_quantity = int(broker_order.filled_quantity or 0)
+                local_filled_quantity = int(local["filled_quantity"] or 0)
+                callback_differs = (
+                    broker_order.status != local["status"]
+                    or callback_filled_quantity != local_filled_quantity
+                )
+                if not detail.get("changed") and callback_differs:
+                    if (broker_order.raw or {}).get("source") == "on_stock_trade":
+                        logger.warning(
+                            "order_event_non_cumulative_trade_callback",
+                            broker_order_id=broker_order.broker_order_id,
+                            mode=mode,
+                        )
+                        return {
+                            "ok": False,
+                            "reason": "non_cumulative_trade_callback",
+                        }
+                    # query 可能仍返回旧状态，使用订单状态回调的累计快照兜底。
                     detail = await syncer.apply_broker_snapshot(
                         str(local["id"]),
                         {
                             "id": str(local["id"]),
-                            "stock_code": broker_order.stock_code,
-                            "side": broker_order.side,
-                            "quantity": broker_order.quantity,
+                            "stock_code": local["stock_code"],
+                            "side": local["side"],
+                            "quantity": local["quantity"],
                             "status": local["status"],
-                            "filled_quantity": 0,
-                            "broker_order_id": broker_order.broker_order_id,
+                            "filled_quantity": local_filled_quantity,
+                            "avg_fill_price": local["avg_fill_price"],
+                            "commission": local["commission"],
+                            "broker_order_id": local["broker_order_id"],
                         },
                         broker_order,
                     )
 
-        if detail.get("new_status") == "FILLED" and getattr(
+        if detail.get("fully_filled") and getattr(
             settings, "AUTO_RECONCILE_ON_FILL", True
         ):
             await self._auto_reconcile(mode)

@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.trade.account_ledger import recompute_account_assets
+from app.trade.ashare_rules import fees
 from app.trade.live_trader import LiveTrader
 from app.trade.qmt.adapter import BrokerOrder, QmtAdapter
 from app.ws.publisher import publish_alert, publish_portfolio_update
@@ -32,6 +33,29 @@ class OrderSyncService:
         self.mode = mode
         self._trader = LiveTrader(db, adapter, mode=mode)
 
+    @staticmethod
+    def _incremental_fill_price(
+        *,
+        old_filled: int,
+        old_avg_price: float,
+        filled_quantity: int,
+        avg_fill_price: float,
+    ) -> float | None:
+        delta = filled_quantity - old_filled
+        if delta <= 0:
+            return 0.0
+        if avg_fill_price <= 0:
+            return None
+        if old_filled == 0:
+            return avg_fill_price
+        if old_avg_price <= 0:
+            return None
+
+        delta_amount = avg_fill_price * filled_quantity - old_avg_price * old_filled
+        if delta_amount <= 0:
+            return None
+        return delta_amount / delta
+
     async def sync_open_orders(self) -> dict[str, Any]:
         """同步本 mode 下未终态订单。"""
         await self._trader._ensure_connected()
@@ -39,7 +63,7 @@ class OrderSyncService:
             text(
                 """
                 SELECT id, stock_code, side, quantity, limit_price, status,
-                       filled_quantity, avg_fill_price, broker_order_id
+                       filled_quantity, avg_fill_price, commission, broker_order_id
                 FROM trade.orders
                 WHERE mode = :mode
                   AND status IN ('PENDING', 'SUBMITTED', 'PARTIAL')
@@ -69,7 +93,7 @@ class OrderSyncService:
                 if detail.get("changed"):
                     stats["updated"] += 1
                     new_st = detail.get("new_status")
-                    if new_st == "FILLED":
+                    if detail.get("fully_filled"):
                         stats["filled"] += 1
                     elif new_st == "CANCELLED":
                         stats["cancelled"] += 1
@@ -107,7 +131,7 @@ class OrderSyncService:
             text(
                 """
                 SELECT id, stock_code, side, quantity, limit_price, status,
-                       filled_quantity, avg_fill_price, broker_order_id, mode
+                       filled_quantity, avg_fill_price, commission, broker_order_id, mode
                 FROM trade.orders WHERE id = :id
                 """
             ),
@@ -177,6 +201,59 @@ class OrderSyncService:
         filled_qty = int(remote.filled_quantity or 0)
         avg_price = float(remote.avg_fill_price or 0)
         old_filled = int(order.get("filled_quantity") or 0)
+        old_avg_price = float(order.get("avg_fill_price") or 0)
+        old_commission = float(order.get("commission") or 0)
+        order_quantity = int(order["quantity"])
+
+        if filled_qty < 0 or filled_qty > order_quantity:
+            logger.error(
+                "order_sync_invalid_filled_quantity",
+                order_id=order_id,
+                broker_order_id=broker_id,
+                filled_quantity=filled_qty,
+                order_quantity=order_quantity,
+            )
+            return {
+                "order_id": order_id,
+                "changed": False,
+                "old_status": old_status,
+                "reason": "invalid_broker_filled_quantity",
+            }
+
+        if filled_qty < old_filled:
+            logger.error(
+                "order_sync_filled_quantity_regressed",
+                order_id=order_id,
+                broker_order_id=broker_id,
+                old_filled_quantity=old_filled,
+                filled_quantity=filled_qty,
+            )
+            return {
+                "order_id": order_id,
+                "changed": False,
+                "old_status": old_status,
+                "reason": "broker_filled_quantity_regressed",
+            }
+
+        if new_status == "FILLED" and filled_qty != order_quantity:
+            logger.error(
+                "order_sync_terminal_quantity_mismatch",
+                order_id=order_id,
+                broker_order_id=broker_id,
+                filled_quantity=filled_qty,
+                order_quantity=order_quantity,
+            )
+            new_status = "PARTIAL" if filled_qty > 0 else "SUBMITTED"
+        elif 0 < filled_qty < order_quantity and new_status in {"PENDING", "SUBMITTED"}:
+            logger.warning(
+                "order_sync_partial_quantity_status_normalized",
+                order_id=order_id,
+                broker_order_id=broker_id,
+                remote_status=remote.status,
+                filled_quantity=filled_qty,
+                order_quantity=order_quantity,
+            )
+            new_status = "PARTIAL"
 
         if new_status == old_status and filled_qty == old_filled:
             return {
@@ -186,18 +263,49 @@ class OrderSyncService:
                 "new_status": new_status,
             }
 
-        commission = 0.0
-        if avg_price > 0 and filled_qty > 0:
-            commission = max(avg_price * filled_qty * 0.0003, 5.0)
+        delta_quantity = filled_qty - old_filled
+        incremental_price = self._incremental_fill_price(
+            old_filled=old_filled,
+            old_avg_price=old_avg_price,
+            filled_quantity=filled_qty,
+            avg_fill_price=avg_price,
+        )
+        if delta_quantity > 0 and incremental_price is None:
+            logger.error(
+                "order_sync_unusable_fill_price",
+                order_id=order_id,
+                broker_order_id=broker_id,
+                old_filled_quantity=old_filled,
+                filled_quantity=filled_qty,
+                old_avg_fill_price=old_avg_price,
+                avg_fill_price=avg_price,
+            )
+            return {
+                "order_id": order_id,
+                "changed": False,
+                "old_status": old_status,
+                "reason": "unusable_broker_fill_price",
+            }
 
-        await self.db.execute(
+        fully_filled = new_status == "FILLED" and filled_qty == order_quantity
+
+        commission = old_commission
+        commission_delta = 0.0
+        if filled_qty > 0 and avg_price > 0:
+            estimated_commission, _, _ = fees(
+                str(order["side"]), avg_price * filled_qty
+            )
+            commission = max(old_commission, estimated_commission)
+            commission_delta = commission - old_commission
+
+        update_result = await self.db.execute(
             text(
                 """
                 UPDATE trade.orders
                 SET status = :status,
                     filled_quantity = :filled_quantity,
                     avg_fill_price = COALESCE(NULLIF(:avg_fill_price, 0), avg_fill_price),
-                    commission = CASE WHEN :status = 'FILLED' THEN :commission ELSE commission END,
+                    commission = :commission,
                     filled_at = CASE
                         WHEN :status = 'FILLED' AND filled_at IS NULL THEN NOW()
                         ELSE filled_at
@@ -211,17 +319,33 @@ class OrderSyncService:
                         ELSE reject_reason
                     END
                 WHERE id = :id
+                  AND status = :old_status
+                  AND COALESCE(filled_quantity, 0) = :old_filled_quantity
                 """
             ),
             {
                 "id": order_id,
                 "status": new_status,
+                "old_status": old_status,
+                "old_filled_quantity": old_filled,
                 "filled_quantity": filled_qty,
                 "avg_fill_price": avg_price,
                 "commission": commission,
                 "reject_reason": remote.message or None,
             },
         )
+        if getattr(update_result, "rowcount", 1) == 0:
+            logger.warning(
+                "order_sync_concurrent_update",
+                order_id=order_id,
+                broker_order_id=broker_id,
+            )
+            return {
+                "order_id": order_id,
+                "changed": False,
+                "old_status": old_status,
+                "reason": "concurrent_order_update",
+            }
 
         await self.db.execute(
             text(
@@ -241,7 +365,10 @@ class OrderSyncService:
                     {
                         "broker_order_id": broker_id,
                         "filled_quantity": filled_qty,
+                        "filled_quantity_delta": delta_quantity,
                         "avg_fill_price": avg_price,
+                        "commission": commission,
+                        "commission_delta": commission_delta,
                         "message": remote.message,
                         "source": "callback_or_poll",
                     },
@@ -250,25 +377,25 @@ class OrderSyncService:
             },
         )
 
-        if new_status == "FILLED" and old_status != "FILLED":
-            if avg_price > 0 and filled_qty > 0:
-                from app.trade.base_trader import OrderRequest
+        if delta_quantity > 0:
+            from app.trade.base_trader import OrderRequest
 
-                req = OrderRequest(
-                    stock_code=order["stock_code"],
-                    side=order["side"],
-                    order_type="LIMIT",
-                    quantity=filled_qty,
-                    limit_price=avg_price,
-                )
-                await self._trader._sync_fill_to_local(
-                    req,
-                    fill_price=avg_price,
-                    quantity=filled_qty,
-                    commission=commission,
-                )
-                await recompute_account_assets(self.db, self.mode)
+            req = OrderRequest(
+                stock_code=order["stock_code"],
+                side=order["side"],
+                order_type="LIMIT",
+                quantity=delta_quantity,
+                limit_price=incremental_price,
+            )
+            await self._trader._sync_fill_to_local(
+                req,
+                fill_price=incremental_price,
+                quantity=delta_quantity,
+                commission=commission_delta,
+            )
+            await recompute_account_assets(self.db, self.mode)
 
+        if fully_filled:
             await publish_portfolio_update(
                 self.mode,
                 {
@@ -278,6 +405,7 @@ class OrderSyncService:
                     "side": order["side"],
                     "status": new_status,
                     "filled_quantity": filled_qty,
+                    "filled_quantity_delta": delta_quantity,
                     "avg_fill_price": avg_price,
                 },
             )
@@ -310,6 +438,7 @@ class OrderSyncService:
                     "stock_code": order["stock_code"],
                     "status": new_status,
                     "filled_quantity": filled_qty,
+                    "filled_quantity_delta": delta_quantity,
                     "old_status": old_status,
                 },
             )
@@ -320,5 +449,9 @@ class OrderSyncService:
             "old_status": old_status,
             "new_status": new_status,
             "filled_quantity": filled_qty,
+            "filled_quantity_delta": delta_quantity,
             "avg_fill_price": avg_price,
+            "commission": commission,
+            "commission_delta": commission_delta,
+            "fully_filled": fully_filled,
         }

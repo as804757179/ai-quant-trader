@@ -8,6 +8,13 @@ interface FilterOption {
   value: string;
 }
 
+export interface RemotePagination {
+  current: number;
+  pageSize: number;
+  total: number;
+  onChange: (page: number, pageSize: number) => void;
+}
+
 interface ReadOnlyTableProps<T extends object> {
   columns: TableProps<T>["columns"];
   data: readonly T[];
@@ -16,6 +23,8 @@ interface ReadOnlyTableProps<T extends object> {
   filterOptions?: readonly FilterOption[];
   getFilterValue?: (record: T) => string;
   pageSize?: number;
+  remotePagination?: RemotePagination;
+  showSearch?: boolean;
   emptyDescription?: string;
 }
 
@@ -27,6 +36,8 @@ export default function ReadOnlyTable<T extends object>({
   filterOptions = [],
   getFilterValue,
   pageSize = 10,
+  remotePagination,
+  showSearch = true,
   emptyDescription = "待接入",
 }: ReadOnlyTableProps<T>) {
   const [keyword, setKeyword] = useState("");
@@ -43,26 +54,46 @@ export default function ReadOnlyTable<T extends object>({
       return matchesKeyword && matchesFilter;
     });
   }, [data, filterValue, getFilterValue, keyword]);
+  const pagination: TableProps<T>["pagination"] = remotePagination
+    ? {
+      current: remotePagination.current,
+      pageSize: remotePagination.pageSize,
+      total: remotePagination.total,
+      showSizeChanger: true,
+      showQuickJumper: false,
+      showTotal: (total) => `共 ${total} 条`,
+      onChange: (page, nextPageSize) => remotePagination.onChange(page, nextPageSize),
+    }
+    : {
+      pageSize,
+      showSizeChanger: true,
+      showQuickJumper: false,
+      showTotal: (total) => `共 ${total} 条`,
+    };
 
   return (
     <div className="readonly-table">
-      <div className="readonly-table__toolbar">
-        <Input
-          allowClear
-          aria-label="筛选表格"
-          placeholder={searchPlaceholder}
-          value={keyword}
-          onChange={(event) => setKeyword(event.target.value)}
-        />
-        {filterOptions.length && getFilterValue ? (
-          <Select
-            aria-label="按状态筛选"
-            value={filterValue}
-            onChange={setFilterValue}
-            options={[{ label: "全部状态", value: "all" }, ...filterOptions]}
-          />
-        ) : null}
-      </div>
+      {showSearch || (filterOptions.length > 0 && getFilterValue) ? (
+        <div className="readonly-table__toolbar">
+          {showSearch ? (
+            <Input
+              allowClear
+              aria-label="筛选表格"
+              placeholder={searchPlaceholder}
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+            />
+          ) : null}
+          {filterOptions.length && getFilterValue ? (
+            <Select
+              aria-label="按状态筛选"
+              value={filterValue}
+              onChange={setFilterValue}
+              options={[{ label: "全部状态", value: "all" }, ...filterOptions]}
+            />
+          ) : null}
+        </div>
+      ) : null}
       <Table<T>
         className="readonly-table__table"
         columns={columns}
@@ -70,12 +101,7 @@ export default function ReadOnlyTable<T extends object>({
         rowKey={rowKey}
         scroll={{ x: "max-content" }}
         locale={{ emptyText: <EmptyState description={emptyDescription} /> }}
-        pagination={{
-          pageSize,
-          showSizeChanger: true,
-          showQuickJumper: false,
-          showTotal: (total) => `共 ${total} 条`,
-        }}
+        pagination={pagination}
       />
     </div>
   );

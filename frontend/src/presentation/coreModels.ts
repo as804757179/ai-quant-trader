@@ -1,9 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { get, type APIResponse } from "../api/client";
-import type { DisplayState } from "./contracts";
+import type { DisplayState, ReleaseLock } from "./contracts";
 import { loadingState, pendingState, readOptional } from "./readOnlyApi";
 
 export interface PortfolioSnapshot {
+  mode?: string;
+  account_record_id?: number | string | null;
+  snapshot_time?: string | null;
+  account_snapshot_time?: string | null;
+  account_snapshot_age_seconds?: number | null;
+  account_snapshot_freshness?: string;
   total_assets?: number;
   cash?: number;
   market_value?: number;
@@ -13,6 +19,15 @@ export interface PortfolioSnapshot {
   position_count?: number;
   position_ratio?: number;
   is_fused?: boolean;
+  valuation_status?: string;
+  valuation_stale?: boolean;
+  valuation_freshness?: string;
+  valuation_as_of?: string | null;
+  valuation_age_seconds?: number | null;
+  valuation_unavailable_positions?: string[];
+  valuation_source?: Record<string, unknown> | null;
+  source?: string;
+  source_version?: string;
 }
 
 export interface RiskDashboardData {
@@ -26,8 +41,10 @@ export interface RiskAlert {
   id?: string;
   level?: string;
   alert_type?: string;
+  type?: string;
   message?: string;
   created_at?: string;
+  ts?: string;
 }
 
 export interface TradeModeData {
@@ -46,6 +63,106 @@ export interface BrokerStatusData {
   connection_ready?: boolean;
 }
 
+export interface TradeOrderData {
+  id?: string;
+  stock_code?: string;
+  side?: string;
+  quantity?: number;
+  status?: string;
+  created_at?: string;
+  order_source?: string;
+  caller?: string;
+  approval_status?: string;
+  approval_id?: string;
+  risk_check_id?: string;
+  data_certification_status?: string;
+}
+
+export interface TradeOrderListData {
+  items?: TradeOrderData[];
+  total?: number;
+  page?: number;
+  page_size?: number;
+  has_more?: boolean;
+}
+
+export interface ExecutionStatusData {
+  mode?: string;
+  release_locks?: ReleaseLock[];
+  all_release_locks_closed?: boolean;
+  paper_trading_enabled?: boolean;
+  require_human_approval?: boolean;
+  ai_direct_order_allowed?: boolean;
+  source_version?: string;
+  snapshot_version?: string;
+  snapshot_at?: string | null;
+  identity?: {
+    authenticated?: boolean;
+    principal_type?: string;
+    role?: string;
+    scopes?: string[];
+  };
+  window_days?: number;
+  order_audit?: {
+    total?: number;
+    failed?: number;
+    cancelled?: number;
+    open?: number;
+    unknown_caller?: number;
+    ai_source?: number;
+    scheduled_source?: number;
+    unapproved?: number;
+    latest_order_at?: string | null;
+    rejection_reasons?: Array<{ reason?: string; count?: number }>;
+  };
+  risk_rules?: {
+    enabled_count?: number;
+    rule_set_hash?: string;
+    rule_version?: string;
+    effective_at?: string | null;
+    source?: string;
+    source_version?: string;
+  };
+  approval_policy?: {
+    required?: boolean;
+    policy_version?: string;
+    independent_approver_required?: boolean;
+  };
+  approval_audit?: {
+    total?: number;
+    requested?: number;
+    approved?: number;
+    consumed?: number;
+    expired?: number;
+    rejected?: number;
+    expired_unconsumed?: number;
+    policy_version_mismatch?: number;
+    latest_approval_at?: string | null;
+  };
+  data_authorization_policy?: {
+    required_for_order_approval?: boolean;
+    server_review_reference_required?: boolean;
+    profile?: string;
+    scope?: string;
+    freshness_seconds?: number;
+  };
+  data_authorization_audit?: {
+    latest_review_count?: number;
+    ready_fresh_count?: number;
+    stale_ready_count?: number;
+    review_required_count?: number;
+    rejected_count?: number;
+    invalid_field_count?: number;
+    latest_reviewed_at?: string | null;
+  };
+}
+
+export interface HealthStatusData {
+  status?: string;
+  version?: string;
+  checks?: Record<string, string>;
+}
+
 export interface RiskExposureData extends PortfolioSnapshot {
   mode?: string;
   positions?: Array<{
@@ -60,13 +177,16 @@ export interface RiskExposureData extends PortfolioSnapshot {
 }
 
 export interface BacktestTaskData {
-  id?: number | string;
+  task_id?: number | string;
   name?: string;
-  strategy_type?: string;
   status?: string;
+  progress?: number;
+  start_date?: string;
+  end_date?: string;
+  universe?: string;
   created_at?: string;
-  updated_at?: string;
-  result_hash?: string;
+  finished_at?: string;
+  error_msg?: string;
 }
 
 export interface BacktestTaskListData {
@@ -74,8 +194,53 @@ export interface BacktestTaskListData {
   total?: number;
 }
 
+export interface BacktestValidationSummaryData {
+  summary?: {
+    total?: number;
+    done?: number;
+    failed?: number;
+    active?: number;
+    latest_task_at?: string | null;
+  };
+  latest_persisted_result?: {
+    task_id?: number;
+    result_id?: number;
+    name?: string;
+    date_from?: string;
+    date_to?: string;
+    universe?: string;
+    lookahead_checked?: boolean;
+    strategy_type?: string | null;
+    parameter_hash?: string;
+    persisted_result_hash?: string;
+    result_hash_status?: string;
+    dataset_hash?: string | null;
+    dataset_hash_status?: string;
+    strategy_version?: string | null;
+    strategy_version_status?: string;
+    engine_version?: string | null;
+    engine_version_status?: string;
+    cost_hash?: string | null;
+    cost_hash_status?: string;
+    reference_comparison_status?: string;
+    validation_status?: string;
+    blocking_reasons?: string[];
+    readiness_reviews?: ReadinessReviewData[];
+  } | null;
+  current_runtime_versions?: {
+    engine?: string;
+    market_rules?: string;
+    trading_calendar?: string;
+  };
+  validation_only?: boolean;
+  not_for_investment?: boolean;
+  public_execution_enabled?: boolean;
+  source_version?: string;
+}
+
 export interface AiSignalData {
   id?: string;
+  record_type?: string;
   stock_code?: string;
   action?: string;
   confidence?: number;
@@ -84,11 +249,216 @@ export interface AiSignalData {
   signal_time?: string;
   valid_until?: string;
   status?: string;
+  historical_data_status?: string;
+  current_validity_status?: string;
+  recorded_context_status?: string;
+  data_authorization_status?: string;
+  recommendation_only?: boolean;
+  tradable?: boolean;
+  research_eligible?: boolean;
+  order_created?: boolean;
 }
 
 export interface AiSignalListData {
   items?: AiSignalData[];
   total?: number;
+}
+
+export interface AiAuditSummaryData {
+  window_days?: number;
+  signal_count?: number;
+  hold_count?: number;
+  agent_call_count?: number;
+  agent_failure_count?: number;
+  ai_order_count?: number;
+  order_created?: boolean;
+  unauthorized_attempt_count?: number | null;
+  unauthorized_attempt_status?: string;
+  configured_models?: string[];
+  latest_call_at?: string | null;
+  ai_order_enabled?: boolean;
+  ai_direct_order_allowed?: boolean;
+  scheduled_order_enabled?: boolean;
+  source_version?: string;
+  latest_signal_at?: string | null;
+  data_status_counts?: {
+    certified?: number;
+    blocked?: number;
+    unknown?: number;
+  };
+  agent_usage?: Array<{
+    agent_name?: string;
+    model_used?: string;
+    status?: string;
+    count?: number;
+    average_latency_ms?: number;
+  }>;
+}
+
+export interface ReadinessReviewData {
+  review_id?: string;
+  stock_code?: string;
+  period?: string;
+  date_from?: string;
+  date_to?: string;
+  adjustment?: string;
+  readiness_status?: string;
+  research_use_scope?: string;
+  requirement_profile?: string;
+  required_fields?: string[];
+  validated_fields?: string[];
+  unresolved_fields?: string[];
+  rejected_fields?: string[];
+  corporate_action_status?: string;
+  missingness_status?: string;
+  provider_validation_status?: string;
+  review_reason?: string;
+  policy_version?: string;
+  reviewer_version?: string;
+  reviewed_at?: string;
+}
+
+export interface ReadinessListData {
+  items?: ReadinessReviewData[];
+  total?: number;
+  summary?: {
+    ready?: number;
+    review_required?: number;
+    rejected?: number;
+    stock_count?: number;
+    unresolved_field_count?: number;
+    rejected_field_count?: number;
+    latest_reviewed_at?: string | null;
+    policy_versions?: string[];
+  };
+  dimensions?: Record<string, Record<string, number>>;
+  blockers?: Array<{ reason?: string; count?: number }>;
+  page?: number;
+  page_size?: number;
+  source_version?: string;
+}
+
+export interface MarketDataStatusData {
+  status?: string;
+  market_session?: string;
+  latest_quote_at?: string | null;
+  lag_seconds?: number | null;
+  freshness_threshold_seconds?: number;
+  recent_symbol_count?: number;
+  active_stock_count?: number;
+  calendar_sources?: string[];
+  source?: string;
+  provider?: string | null;
+  provider_metadata_status?: string;
+  fallback_status?: string;
+  source_version?: string;
+  latest_batch?: MarketQuoteBatchData | null;
+}
+
+export interface MarketQuoteBatchData {
+  batch_id?: string;
+  provider?: string;
+  source?: string;
+  fetch_endpoint?: string;
+  requested_symbols?: number;
+  returned_symbols?: number;
+  accepted_symbols?: number;
+  rejected_symbols?: number;
+  status?: string;
+  failure_reason?: string | null;
+  raw_response_hash?: string | null;
+  collector_version?: string;
+  normalizer_version?: string;
+  started_at?: string;
+  fetched_at?: string | null;
+  received_at?: string;
+  fallback_used?: boolean | null;
+}
+
+export interface MarketQuoteBatchListData {
+  items?: MarketQuoteBatchData[];
+  total?: number;
+  page?: number;
+  page_size?: number;
+  has_more?: boolean;
+  source?: string;
+  source_version?: string;
+}
+
+export interface EquityCurvePoint {
+  id?: number;
+  record_time?: string;
+  total_assets?: number;
+  cash?: number;
+  market_value?: number;
+  daily_pnl?: number;
+  total_pnl?: number;
+  total_pnl_pct?: number;
+  position_count?: number;
+  position_ratio?: number;
+  data_type?: string;
+  valuation_status?: string;
+  valuation_stale?: boolean;
+  valuation_freshness?: string;
+  valuation_as_of?: string | null;
+  valuation_age_seconds?: number | null;
+  valuation_source?: Record<string, unknown> | null;
+}
+
+export interface EquityCurveData {
+  mode?: string;
+  days?: number;
+  items?: EquityCurvePoint[];
+  total?: number;
+  latest_at?: string | null;
+  source?: string;
+  source_version?: string;
+  valuation_status?: string;
+  valuation_stale?: boolean;
+  valuation_freshness?: string;
+  valuation_as_of?: string | null;
+  valuation_age_seconds?: number | null;
+  valuation_source?: Record<string, unknown> | null;
+}
+
+export interface ResearchCandidateStatusData {
+  items?: ReadinessReviewData[];
+  counts?: Record<string, number>;
+  snapshot_hash?: string;
+  candidate_count?: number | null;
+  candidate_status?: string;
+  tradable?: boolean;
+  order_created?: boolean;
+  release_lock?: ReleaseLock;
+  source_version?: string;
+}
+
+export interface StrategyRuntimeStatusItem {
+  type?: string;
+  name?: string;
+  strategy_id?: number;
+  revision?: number;
+  version?: number | null;
+  version_id?: number | null;
+  enabled?: boolean;
+  requested_enabled?: boolean;
+  config_status?: string;
+  params_source?: string;
+  approval_status?: string | null;
+  config_hash?: string | null;
+  catalog_hash?: string | null;
+  requirement_profile?: string;
+  error_code?: string;
+}
+
+export interface StrategyRuntimeStatusData {
+  items?: StrategyRuntimeStatusItem[];
+  total?: number;
+  enabled_count?: number;
+  catalog_version?: string;
+  config_hash?: string;
+  source?: string;
+  source_version?: string;
 }
 
 type ApiLoader<T> = () => Promise<APIResponse<T>>;
@@ -125,6 +495,13 @@ export function useReadOnlyDisplay<T>(
   return state;
 }
 
+export function useStrategyRuntimeStatus() {
+  return useReadOnlyDisplay<StrategyRuntimeStatusData>(
+    () => get<StrategyRuntimeStatusData>("/strategy/runtime-status"),
+    "strategy-runtime-status-v2",
+  );
+}
+
 export function useOverviewModel() {
   const dashboard = useReadOnlyDisplay<RiskDashboardData>(
     () => get<RiskDashboardData>("/risk/dashboard", { mode: "simulation" }),
@@ -138,8 +515,56 @@ export function useOverviewModel() {
     () => get<{ items?: RiskAlert[]; total?: number }>("/risk/alerts", { limit: 10 }),
     "risk-alerts-v1",
   );
+  const health = useReadOnlyDisplay<HealthStatusData>(() => get<HealthStatusData>("/health"), "health-v1");
+  const execution = useExecutionStatus();
+  const market = useReadOnlyDisplay<MarketDataStatusData>(
+    () => get<MarketDataStatusData>("/stock/market/status"),
+    "market-quote-status-v1",
+  );
+  const equity = useReadOnlyDisplay<EquityCurveData>(
+    () => get<EquityCurveData>("/portfolio/equity-curve", { mode: "simulation", days: 30 }),
+    "account-equity-curve-v1",
+  );
+  const candidates = useReadOnlyDisplay<ResearchCandidateStatusData>(
+    () => get<ResearchCandidateStatusData>("/research/candidate-status", { limit: 5 }),
+    "research-candidate-status-v1",
+  );
+  const strategy = useStrategyRuntimeStatus();
 
-  return { dashboard, summary, alerts };
+  return { dashboard, summary, alerts, health, execution, market, equity, candidates, strategy };
+}
+
+export function useMarketStatus() {
+  return useReadOnlyDisplay<MarketDataStatusData>(
+    () => get<MarketDataStatusData>("/stock/market/status"),
+    "market-quote-status-v2",
+  );
+}
+
+export function useMarketQuoteBatches(page = 1, pageSize = 20) {
+  return useReadOnlyDisplay<MarketQuoteBatchListData>(
+    () => get<MarketQuoteBatchListData>("/stock/market/batches", { page, page_size: pageSize }),
+    `market-quote-batches-v2:p${page}:s${pageSize}`,
+  );
+}
+
+export function useExecutionStatus() {
+  return useReadOnlyDisplay<ExecutionStatusData>(
+    () => get<ExecutionStatusData>("/trade/execution-status"),
+    "execution-safety-v4",
+  );
+}
+
+export function useTradeOrders(page = 1, pageSize = 50) {
+  return useReadOnlyDisplay<TradeOrderListData>(
+    () => get<TradeOrderListData>("/trade/orders", {
+      mode: "simulation",
+      days: 7,
+      page,
+      page_size: pageSize,
+    }),
+    `trade-orders-v2:simulation:7:p${page}:s${pageSize}`,
+  );
 }
 
 export function useTradeControlModel() {
@@ -152,8 +577,23 @@ export function useTradeControlModel() {
     () => get<RiskExposureData>("/risk/exposure", { mode: "simulation" }),
     "risk-exposure-v1",
   );
+  const execution = useExecutionStatus();
 
-  return { mode, broker, exposure };
+  return { mode, broker, exposure, execution };
+}
+
+export function useReadinessReviews() {
+  return useReadOnlyDisplay<ReadinessListData>(
+    () => get<ReadinessListData>("/research/readiness", { page: 1, page_size: 100 }),
+    "field-readiness-v2",
+  );
+}
+
+export function useResearchCandidateStatus(limit = 50) {
+  return useReadOnlyDisplay<ResearchCandidateStatusData>(
+    () => get<ResearchCandidateStatusData>("/research/candidate-status", { limit }),
+    "research-candidate-status-v1",
+  );
 }
 
 export function useBacktestTasks() {
@@ -163,10 +603,24 @@ export function useBacktestTasks() {
   );
 }
 
+export function useBacktestValidationSummary() {
+  return useReadOnlyDisplay<BacktestValidationSummaryData>(
+    () => get<BacktestValidationSummaryData>("/backtest/validation-summary"),
+    "backtest-validation-summary-v1",
+  );
+}
+
 export function useAiSignals() {
   return useReadOnlyDisplay<AiSignalListData>(
     () => get<AiSignalListData>("/ai/signals", { page: 1, page_size: 50 }),
     "ai-signals-v1",
+  );
+}
+
+export function useAiAuditSummary() {
+  return useReadOnlyDisplay<AiAuditSummaryData>(
+    () => get<AiAuditSummaryData>("/ai/audit-summary", { days: 30 }),
+    "ai-audit-v2",
   );
 }
 

@@ -1,5 +1,6 @@
 from sqlalchemy import text
 
+from app.core.auth import Principal
 from app.core.config import settings
 from app.core.logging import FEATURE_TRADE, get_logger
 from app.data.cache import CacheManager
@@ -42,7 +43,7 @@ class TradeService:
 
         return OrderManager(db, risk_checker, fuse_manager, traders)
 
-    async def create_manual_order(self, payload: dict) -> dict:
+    async def create_manual_order(self, payload: dict, principal: Principal) -> dict:
         request = OrderCreateRequest(**payload)
         logger.info(
             "trade_api_create_order",
@@ -60,12 +61,15 @@ class TradeService:
             limit_price=request.limit_price,
             signal_id=request.signal_id,
             trigger_source="manual_order",
-            operator="user",
+            operator=principal.display_name,
             order_reason=request.order_reason or "manual order submitted by API",
             caller="manual_api",
-            approval_id=request.approval_id,
-            approval_status="approved" if request.approval_id else "pending",
-            data_certification_status=request.data_certification_status,
+            principal=principal,
+            principal_id=principal.principal_id,
+            client_intent_key=request.client_intent_key,
+            approval_id=request.execution_authorization_id,
+            approval_status="approved" if request.execution_authorization_id else "pending",
+            data_certification_status="server_authorization_required",
         )
         async with get_db() as db:
             manager = await self._build_order_manager(db)
@@ -100,6 +104,17 @@ class TradeService:
         params.update({"limit": page_size, "offset": offset})
 
         async with get_db() as db:
+            total_result = await db.execute(
+                text(
+                    f"""
+                    SELECT COUNT(*) AS total
+                    FROM trade.orders
+                    WHERE {where_clause}
+                    """
+                ),
+                params,
+            )
+            total = int(total_result.scalar() or 0)
             result = await db.execute(
                 text(
                     f"""
@@ -110,7 +125,7 @@ class TradeService:
                            data_certification_status, created_by, created_from_task
                     FROM trade.orders
                     WHERE {where_clause}
-                    ORDER BY created_at DESC
+                    ORDER BY created_at DESC, id DESC
                     LIMIT :limit OFFSET :offset
                     """
                 ),
@@ -123,7 +138,13 @@ class TradeService:
                     item["created_at"] = item["created_at"].isoformat()
                 if item.get("filled_at"):
                     item["filled_at"] = item["filled_at"].isoformat()
-        return {"items": items, "page": page, "page_size": page_size}
+        return {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "has_more": offset + len(items) < total,
+        }
 
     async def get_current_mode(self) -> dict:
         broker = probe_broker_environment()

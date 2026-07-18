@@ -113,12 +113,19 @@ def _load_local_universe_cache() -> list[dict[str, Any]]:
     return []
 
 
-async def seed_stocks() -> None:
+async def seed_stocks(*, refresh_source: bool = False) -> None:
     client = DataClient()
     try:
-        remote = await client.fetch_stock_list()
+        remote = (
+            await client.refresh_stock_list()
+            if refresh_source
+            else await client.fetch_stock_list()
+        )
     finally:
         await client.close()
+
+    if refresh_source and not remote:
+        raise RuntimeError("股票池刷新未获得完整上游快照")
 
     stocks: list[dict[str, Any]] = []
     if remote:

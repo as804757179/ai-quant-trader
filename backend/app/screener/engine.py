@@ -128,51 +128,15 @@ class ScreenerEngine:
             payload["theme"] = theme
             return payload
 
-        cache_key = self._cache_key("theme_certified_v2", {"theme": theme, "limit": limit})
-        cached = await self._get_cache(cache_key)
-        if cached:
-            cached["from_cache"] = True
-            return cached
-
-        sectors, keywords = self._resolve_theme(theme)
-        theme_codes = await self._find_theme_stock_codes(keywords)
-        universe = await self._load_universe(
-            requirement_profile=SCREENER_REQUIREMENT_PROFILE,
-            required_fields=SCREENER_REQUIRED_FIELDS,
+        payload = self._release_blocked_payload(limit)
+        payload.update(
+            {
+                "theme": theme,
+                "blocked_reason": "THEME_EVIDENCE_READINESS_NOT_IMPLEMENTED",
+                "note": "主题候选尚未接入 Evidence/Profile 当前事实门禁，已拒绝 legacy 公告匹配。",
+            }
         )
-        matched = []
-        theme_lower = theme.lower()
-
-        for stock in universe:
-            code = stock["code"]
-            name = stock.get("name", "")
-            sector = stock.get("sector", "")
-            if code in theme_codes:
-                stock["theme_match"] = "news"
-                matched.append(stock)
-                continue
-            if self.factors.sector_match(sector, sectors):
-                stock["theme_match"] = "sector"
-                matched.append(stock)
-                continue
-            if any(kw.lower() in name.lower() or kw.lower() in theme_lower for kw in keywords):
-                stock["theme_match"] = "name"
-                matched.append(stock)
-
-        sort_field = "change_pct"
-        matched.sort(key=lambda s: self.factors.sort_key(s, sort_field), reverse=True)
-        items = matched[:limit]
-        payload = {
-            "items": items,
-            "total": len(items),
-            "limit": limit,
-            "theme": theme,
-            "resolved_sectors": sectors,
-            "resolved_keywords": keywords,
-            "from_cache": False,
-        }
-        await self._set_cache(cache_key, payload)
-        logger.info("screener_theme_done", theme=theme, matched=len(items))
+        logger.warning("screener_theme_blocked", theme=theme)
         return payload
 
     @staticmethod
@@ -555,48 +519,11 @@ class ScreenerEngine:
         return universe
 
     async def _find_theme_stock_codes(self, keywords: list[str]) -> set[str]:
-        if not keywords:
-            return set()
-
-        async with get_db() as db:
-            # 公告表可能不存在（精简库）
-            exists = await db.execute(
-                text(
-                    """
-                    SELECT 1 FROM information_schema.tables
-                    WHERE table_schema='fundamental' AND table_name='announcements'
-                    """
-                )
-            )
-            if not exists.scalar():
-                return set()
-
-            # asyncpg 对 ANY(:list) 支持不稳定，改为 OR 拼接
-            clauses = []
-            params: dict[str, Any] = {}
-            for i, kw in enumerate(keywords[:12]):
-                key = f"p{i}"
-                params[key] = f"%{kw}%"
-                clauses.append(
-                    f"(title ILIKE :{key} OR COALESCE(content_text, '') ILIKE :{key})"
-                )
-            if not clauses:
-                return set()
-            ann = await db.execute(
-                text(
-                    f"""
-                    SELECT DISTINCT stock_code
-                    FROM fundamental.announcements
-                    WHERE stock_code IS NOT NULL
-                      AND ({' OR '.join(clauses)})
-                    LIMIT 200
-                    """
-                ),
-                params,
-            )
-            codes = {r[0] for r in ann.fetchall() if r[0]}
-
-        return codes
+        logger.warning(
+            "screener_theme_legacy_announcement_lookup_disabled",
+            keyword_count=len(keywords),
+        )
+        return set()
 
     def _filter_and_sort(
         self,

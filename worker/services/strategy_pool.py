@@ -8,8 +8,6 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from services.stock_pool import get_active_stock_codes
-
 logger = structlog.get_logger(__name__)
 
 _engine = None
@@ -26,39 +24,80 @@ def _get_session_factory() -> async_sessionmaker[AsyncSession]:
 
 
 async def get_active_strategies() -> list[dict[str, Any]]:
-    """从 strategy.strategies 获取活跃策略；表不存在时回退默认策略。"""
+    """只返回配置可证明的活跃策略。"""
     factory = _get_session_factory()
     try:
         async with factory() as session:
             result = await session.execute(
                 text(
                     """
-                    SELECT id, name, strategy_type, trade_mode, universe, config
-                    FROM strategy.strategies
-                    WHERE is_active = TRUE
-                    ORDER BY id
+                    SELECT s.id, s.name, s.strategy_type, s.trade_mode, s.universe,
+                           v.version_id AS config_version_id,
+                           v.version_number AS config_version,
+                           v.params, v.config_hash, v.catalog_hash
+                    FROM strategy.strategies AS s
+                    JOIN strategy.strategy_version_heads AS h ON h.strategy_id = s.id
+                    JOIN strategy.strategy_versions AS v
+                        ON v.version_id = h.active_version_id
+                        AND v.version_number = h.revision
+                        AND v.enabled = TRUE
+                    JOIN strategy.strategy_version_approvals AS a
+                        ON a.version_id = v.version_id AND a.status = 'approved'
+                    ORDER BY s.id
                     """
                 )
             )
-            rows = [dict(r) for r in result.mappings().all()]
-            if rows:
-                logger.debug("active_strategies_loaded", count=len(rows))
-                return rows
+            rows = []
+            for raw_row in result.mappings().all():
+                row = dict(raw_row)
+                row["config"] = {
+                    "enabled": True,
+                    "params": row.pop("params", None),
+                    "version_id": row.pop("config_version_id", None),
+                    "version": row.pop("config_version", None),
+                    "config_hash": row.pop("config_hash", None),
+                    "catalog_hash": row.pop("catalog_hash", None),
+                }
+                rows.append(row)
+            strategies = [row for row in rows if _is_verified_strategy(row)]
+            if strategies:
+                logger.debug("active_strategies_loaded", count=len(strategies))
+                return strategies
+            logger.warning("active_strategies_unverified_or_empty", row_count=len(rows))
     except Exception as exc:
         logger.warning("strategy_table_unavailable", error=str(exc))
 
-    trade_mode = os.getenv("TRADE_MODE", "simulation")
-    logger.info("strategy_fallback_default_pool", trade_mode=trade_mode)
-    return [
-        {
-            "id": 0,
-            "name": "default_active_pool",
-            "strategy_type": "default",
-            "trade_mode": trade_mode,
-            "universe": "active",
-            "config": {},
-        }
-    ]
+    return []
+
+
+def _is_verified_strategy(strategy: dict[str, Any]) -> bool:
+    strategy_id = strategy.get("id")
+    config = strategy.get("config")
+    config_hash = config.get("config_hash") if isinstance(config, dict) else None
+    catalog_hash = config.get("catalog_hash") if isinstance(config, dict) else None
+    return (
+        type(strategy_id) is int
+        and strategy_id > 0
+        and isinstance(strategy.get("name"), str)
+        and bool(strategy["name"].strip())
+        and isinstance(strategy.get("strategy_type"), str)
+        and bool(strategy["strategy_type"].strip())
+        and strategy.get("trade_mode") in {"simulation", "paper", "live"}
+        and isinstance(config, dict)
+        and config.get("enabled") is True
+        and isinstance(config.get("params"), dict)
+        and bool(config["params"])
+        and type(config.get("version_id")) is int
+        and config["version_id"] > 0
+        and type(config.get("version")) is int
+        and config["version"] >= 1
+        and isinstance(config_hash, str)
+        and len(config_hash) == 64
+        and all(char in "0123456789abcdef" for char in config_hash)
+        and isinstance(catalog_hash, str)
+        and len(catalog_hash) == 64
+        and all(char in "0123456789abcdef" for char in catalog_hash)
+    )
 
 
 async def get_strategy_stock_codes(
@@ -66,9 +105,10 @@ async def get_strategy_stock_codes(
     *,
     limit: int = 20,
 ) -> list[str]:
-    """获取策略关注股票池；无关注池时回退全市场活跃股。"""
-    if not strategy_id:
-        return await get_active_stock_codes(limit=limit)
+    """只返回可证明归属该策略的活跃关注股票。"""
+    if type(strategy_id) is not int or strategy_id <= 0:
+        logger.warning("strategy_pool_unverified", strategy_id=strategy_id)
+        return []
 
     factory = _get_session_factory()
     try:
@@ -89,8 +129,10 @@ async def get_strategy_stock_codes(
                 {"strategy_id": strategy_id, "limit": limit},
             )
             codes = [row[0] for row in result.fetchall()]
-            if codes:
+            if codes and all(isinstance(code, str) and code.strip() for code in codes):
+                logger.debug("strategy_watchlist_loaded", strategy_id=strategy_id, count=len(codes))
                 return codes
+            logger.warning("strategy_watchlist_unverified_or_empty", strategy_id=strategy_id)
     except Exception as exc:
         logger.warning(
             "watchlist_unavailable",
@@ -98,7 +140,7 @@ async def get_strategy_stock_codes(
             error=str(exc),
         )
 
-    return await get_active_stock_codes(limit=limit)
+    return []
 
 
 async def has_valid_signal(stock_code: str) -> bool:

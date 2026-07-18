@@ -9,10 +9,21 @@ from app.data.cache import CacheManager
 from app.data.certification import DataCertificationService
 from app.data.certified_kline_repository import CertifiedKlineRepository
 from app.data.research_profiles import ResearchDataRequirementProfile
-from app.data.client import DataClient
+from app.data.client import DataClient, DataFetchResult
 from app.db import get_db
 
 logger = structlog.get_logger()
+
+AI_CONTEXT_POLICY_VERSION = "ai-context-gate-v1"
+_AI_CONTEXT_REQUIRED_SOURCES = (
+    "quote",
+    "kline_1d",
+    "kline_60m",
+    "fund_flow",
+    "news",
+    "financial_report",
+    "rag",
+)
 
 
 class DataService:
@@ -24,20 +35,54 @@ class DataService:
     async def close(self) -> None:
         await self.client.close()
 
-    async def get_quote(self, code: str) -> dict | None:
+    async def get_quote_result(self, code: str) -> DataFetchResult:
         code = str(code).zfill(6) if str(code).isdigit() else str(code)
         cache_key = f"quote:{code}"
         cached = await self.cache.get(cache_key)
         if cached:
-            return cached
+            return DataFetchResult(
+                status="success",
+                data=cached,
+                provenance={
+                    "source": "backend_memory_cache",
+                    "quality_status": "observed",
+                    "usage_status": "display_only",
+                },
+            )
         try:
-            data = await self.client.fetch_quote(code)
-            if data and self._validate_quote(data):
-                await self.cache.set(cache_key, data, ttl=CacheManager.TTL_QUOTE)
-                return data
+            fetch_result = await self.client.fetch_quote_result(code)
+            if not fetch_result.success:
+                logger.warning(
+                    "quote_remote_data_unavailable",
+                    code=code,
+                    status=fetch_result.status,
+                    error_code=fetch_result.error_code,
+                    retryable=fetch_result.retryable,
+                    provenance=fetch_result.provenance,
+                )
+                return fetch_result
+            if fetch_result.data and self._validate_quote(fetch_result.data):
+                await self.cache.set(
+                    cache_key, fetch_result.data, ttl=CacheManager.TTL_QUOTE
+                )
+                return fetch_result
+            return DataFetchResult(
+                status="validation_failed",
+                error_code="QUOTE_VALIDATION_FAILED",
+                provenance=fetch_result.provenance,
+            )
         except Exception as exc:
             logger.warning("get_quote_failed", code=code, error=str(exc))
-        return None
+            return DataFetchResult(
+                status="fetch_failed",
+                error_code="QUOTE_SERVICE_FAILED",
+                retryable=True,
+                provenance={"source": "backend_data_service"},
+            )
+
+    async def get_quote(self, code: str) -> dict | None:
+        result = await self.get_quote_result(code)
+        return result.data if result.success and isinstance(result.data, dict) else None
 
     async def get_quotes_batch(self, codes: list[str]) -> dict[str, dict]:
         """批量取行情：L1/Redis 优先，缺口一次远程批量拉取。"""
@@ -65,7 +110,17 @@ class DataService:
 
         if missing:
             try:
-                remote = await self.client.fetch_quotes_batch(missing)
+                fetch_result = await self.client.fetch_quotes_batch_result(missing)
+                remote = fetch_result.data if fetch_result.success else {}
+                if not fetch_result.success:
+                    logger.warning(
+                        "quotes_batch_remote_data_unavailable",
+                        status=fetch_result.status,
+                        error_code=fetch_result.error_code,
+                        retryable=fetch_result.retryable,
+                        provenance=fetch_result.provenance,
+                        n=len(missing),
+                    )
             except Exception as exc:
                 logger.warning("get_quotes_batch_failed", error=str(exc), n=len(missing))
                 remote = {}
@@ -83,6 +138,8 @@ class DataService:
         limit: int = 200,
         adj: str = "qfq",
     ) -> list[dict]:
+        if adj not in {"raw", "qfq"}:
+            raise ValueError(f"unsupported kline adjustment: {adj}")
         code = str(code).zfill(6) if str(code).isdigit() else str(code)
         period = self._normalize_period(period)
         cache_key = f"kline:{code}:{period}:{limit}:{adj}"
@@ -144,19 +201,18 @@ class DataService:
                 await self.cache.set(cache_key, rows, ttl=ttl)
                 return rows
 
-            data = await self.client.fetch_kline(code, period, limit)
-            if not data:
-                # a-stock-data 挂掉时直连新浪
-                from app.data.sina_kline import fetch_sina_kline
-
-                data = await fetch_sina_kline(code, period, limit)
-                if data:
-                    logger.info(
-                        "kline_sina_fallback",
-                        code=code,
-                        period=period,
-                        bars=len(data),
-                    )
+            fetch_result = await self.client.fetch_kline_result(code, period, limit)
+            data = fetch_result.data if fetch_result.success else []
+            if not fetch_result.success:
+                logger.warning(
+                    "kline_remote_data_unavailable",
+                    code=code,
+                    period=period,
+                    status=fetch_result.status,
+                    error_code=fetch_result.error_code,
+                    retryable=fetch_result.retryable,
+                    provenance=fetch_result.provenance,
+                )
             if data:
                 # 先返回再异步落库，避免串行 INSERT 拖慢首屏
                 if period in ("1d", "1w", "1M"):
@@ -172,15 +228,6 @@ class DataService:
                 return data
         except Exception as exc:
             logger.error("get_kline_failed", code=code, period=period, error=str(exc))
-            # 最终降级
-            try:
-                from app.data.sina_kline import fetch_sina_kline
-
-                data = await fetch_sina_kline(code, period, limit)
-                if data:
-                    return data
-            except Exception:
-                pass
         return []
 
     async def get_certified_kline(
@@ -248,11 +295,20 @@ class DataService:
                 "kline_save_failed", code=code, period=period, error=str(save_exc)
             )
 
-    async def get_fund_flow(self, code: str, days: int = 10) -> list[dict]:
+    async def get_fund_flow_result(self, code: str, days: int = 10) -> DataFetchResult:
         cache_key = f"fund_flow:{code}:{days}"
         cached = await self.cache.get(cache_key)
-        if cached:
-            return cached
+        if cached is not None:
+            return DataFetchResult(
+                status="success" if cached else "no_data",
+                data=cached if cached else None,
+                error_code=None if cached else "NO_DATA",
+                provenance={
+                    "source": "backend_memory_cache",
+                    "quality_status": "observed",
+                    "usage_status": "display_only",
+                },
+            )
         try:
             async with get_db() as db:
                 result = await db.execute(
@@ -273,20 +329,67 @@ class DataService:
                     if row.get("time"):
                         row["time"] = row["time"].isoformat()
 
-            if not data:
-                data = await self.client.fetch_fund_flow(code, days) or []
+            if data:
+                await self.cache.set(cache_key, data, ttl=CacheManager.TTL_FUND_FLOW)
+                return DataFetchResult(
+                    status="success",
+                    data=data,
+                    provenance={
+                        "source": "market.fund_flows",
+                        "quality_status": "observed",
+                        "usage_status": "display_only",
+                    },
+                )
 
-            await self.cache.set(cache_key, data, ttl=CacheManager.TTL_FUND_FLOW)
-            return data
+            if not data:
+                fetch_result = await self.client.fetch_fund_flow_result(code, days)
+                if not fetch_result.success:
+                    logger.warning(
+                        "fund_flow_remote_data_unavailable",
+                        code=code,
+                        status=fetch_result.status,
+                        error_code=fetch_result.error_code,
+                        retryable=fetch_result.retryable,
+                        provenance=fetch_result.provenance,
+                    )
+                    return fetch_result
+                data = fetch_result.data
+                if not data:
+                    return DataFetchResult(
+                        status="no_data",
+                        error_code="NO_DATA",
+                        provenance=fetch_result.provenance,
+                    )
+                await self.cache.set(cache_key, data, ttl=CacheManager.TTL_FUND_FLOW)
+                return fetch_result
         except Exception as exc:
             logger.warning("get_fund_flow_failed", code=code, error=str(exc))
-            return []
+            return DataFetchResult(
+                status="fetch_failed",
+                error_code="FUND_FLOW_SERVICE_FAILED",
+                retryable=True,
+                provenance={"source": "backend_data_service"},
+            )
 
-    async def get_news(self, code: str, limit: int = 20) -> list[dict]:
+    async def get_fund_flow(self, code: str, days: int = 10) -> list[dict]:
+        result = await self.get_fund_flow_result(code, days)
+        return result.data if result.success and isinstance(result.data, list) else []
+
+    async def get_news_result(self, code: str, limit: int = 20) -> DataFetchResult:
         cache_key = f"news:{code}:{limit}"
         cached = await self.cache.get(cache_key)
-        if cached:
-            return cached
+        if cached is not None:
+            return DataFetchResult(
+                status="success" if cached else "no_data",
+                data=cached if cached else None,
+                error_code=None if cached else "NO_DATA",
+                provenance={
+                    "source": "backend_memory_cache",
+                    "quality_status": "observed",
+                    "usage_status": "display_only",
+                    "content_scope": "announcement_compatibility_only",
+                },
+            )
         try:
             async with get_db() as db:
                 result = await db.execute(
@@ -307,23 +410,40 @@ class DataService:
                         row["publish_time"] = row["publish_time"].isoformat()
 
             # 库内已有足够公告时跳过远程，减少超时等待
-            if len(db_news) >= min(limit, 5):
-                unique_news = db_news[:limit]
-            else:
-                fresh_news = await self.client.fetch_news(code, limit=10) or []
-                seen: set[str] = set()
-                unique_news: list[dict] = []
-                for item in fresh_news + db_news:
-                    key = item.get("title", "")
-                    if key and key not in seen:
-                        seen.add(key)
-                        unique_news.append(item)
-                unique_news = unique_news[:limit]
-            await self.cache.set(cache_key, unique_news, ttl=CacheManager.TTL_NEWS)
-            return unique_news
+            if not db_news:
+                return DataFetchResult(
+                    status="no_data",
+                    error_code="NO_DATA",
+                    provenance={
+                        "source": "fundamental.announcements",
+                        "quality_status": "observed",
+                        "usage_status": "display_only",
+                        "content_scope": "announcement_compatibility_only",
+                    },
+                )
+            await self.cache.set(cache_key, db_news, ttl=CacheManager.TTL_NEWS)
+            return DataFetchResult(
+                status="success",
+                data=db_news,
+                provenance={
+                    "source": "fundamental.announcements",
+                    "quality_status": "observed",
+                    "usage_status": "display_only",
+                    "content_scope": "announcement_compatibility_only",
+                },
+            )
         except Exception as exc:
             logger.warning("get_news_failed", code=code, error=str(exc))
-            return []
+            return DataFetchResult(
+                status="fetch_failed",
+                error_code="NEWS_STORAGE_FAILED",
+                retryable=True,
+                provenance={"source": "fundamental.announcements"},
+            )
+
+    async def get_news(self, code: str, limit: int = 20) -> list[dict]:
+        result = await self.get_news_result(code, limit)
+        return result.data if result.success and isinstance(result.data, list) else []
 
     def _validate_quote(self, data: dict) -> bool:
         if not data:
@@ -442,17 +562,28 @@ class DataService:
             return_exceptions=True,
         )
 
-        def _safe(val: Any) -> Any:
-            return None if isinstance(val, Exception) else val
+        source_values = {
+            "quote": quote,
+            "kline_1d": kline_1d,
+            "kline_60m": kline_60m,
+            "fund_flow": fund_flow,
+            "news": news,
+            "financial_report": financial,
+            "rag": {"status": "not_research_authorized"},
+        }
+        analysis_context = self._build_analysis_context_gate(source_values)
 
-        quote = _safe(quote) or {}
-        kline_1d = _safe(kline_1d) or []
-        kline_60m = _safe(kline_60m) or []
-        fund_flow = _safe(fund_flow) or []
-        news = _safe(news) or []
-        financial = _safe(financial) or {}
-        north = _safe(north) or {}
-        dragon = _safe(dragon) or []
+        def _safe(val: Any, default: Any) -> Any:
+            return default if isinstance(val, Exception) else val or default
+
+        quote = _safe(quote, {})
+        kline_1d = _safe(kline_1d, [])
+        kline_60m = _safe(kline_60m, [])
+        fund_flow = _safe(fund_flow, [])
+        news = _safe(news, [])
+        financial = _safe(financial, {})
+        north = _safe(north, {})
+        dragon = _safe(dragon, [])
 
         indicators = self._calculate_indicators(kline_1d) if kline_1d else {}
         historical_data_status = "certified" if kline_1d else "uncertified"
@@ -513,6 +644,41 @@ class DataService:
                 None if historical_data_status == "certified"
                 else "当前历史数据未认证，仅可用于展示，不可用于交易判断。"
             ),
+            **analysis_context,
+        }
+
+    @staticmethod
+    def _build_analysis_context_gate(source_values: dict[str, Any]) -> dict[str, Any]:
+        source_states: dict[str, str] = {}
+        blockers: list[dict[str, str]] = []
+
+        for source in _AI_CONTEXT_REQUIRED_SOURCES:
+            value = source_values.get(source)
+            if isinstance(value, Exception):
+                status = "unavailable"
+                reason = "关键数据源请求失败。"
+            elif not value:
+                status = "missing"
+                reason = "关键数据源没有可用记录。"
+            elif source in {"kline_1d", "kline_60m"}:
+                status = "ready"
+                reason = ""
+            elif source in {"news", "financial_report", "rag"}:
+                status = "not_research_authorized"
+                reason = "研究证据尚未获得当前用途授权。"
+            else:
+                status = "provenance_unverified"
+                reason = "关键数据缺少可验证的来源、抓取时点或使用资格。"
+
+            source_states[source] = status
+            if status != "ready":
+                blockers.append({"source": source, "status": status, "reason": reason})
+
+        return {
+            "analysis_context_policy_version": AI_CONTEXT_POLICY_VERSION,
+            "analysis_context_status": "ready" if not blockers else "blocked",
+            "analysis_context_sources": source_states,
+            "analysis_context_blockers": blockers,
         }
 
     async def get_latest_financial_report(self, code: str) -> dict[str, Any]:
@@ -542,8 +708,18 @@ class DataService:
         except Exception as exc:
             logger.warning("get_financial_report_db_failed", code=code, error=str(exc))
 
-        report = await self.client.fetch_financial_report(code)
-        return report or {}
+        fetch_result = await self.client.fetch_financial_report_result(code)
+        if not fetch_result.success:
+            logger.warning(
+                "financial_remote_data_unavailable",
+                code=code,
+                status=fetch_result.status,
+                error_code=fetch_result.error_code,
+                retryable=fetch_result.retryable,
+                provenance=fetch_result.provenance,
+            )
+            return {}
+        return fetch_result.data
 
     async def get_north_flow(self, code: str) -> dict[str, Any]:
         flows = await self.get_fund_flow(code, 5)

@@ -34,6 +34,7 @@ const ResearchCandidatesPage = lazy(() => import("../pages/research/ResearchCand
 const ResearchDeepPage = lazy(() => import("../pages/research/ResearchDeepPage"));
 const ResearchExcludedPage = lazy(() => import("../pages/research/ResearchExcludedPage"));
 const ResearchHoldingsPage = lazy(() => import("../pages/research/ResearchHoldingsPage"));
+const NewsEvidenceReviewPage = lazy(() => import("../pages/research/NewsEvidenceReviewPage"));
 const CalendarRulesPage = lazy(() => import("../pages/strategy/CalendarRulesPage"));
 const FeeRulesPage = lazy(() => import("../pages/strategy/FeeRulesPage"));
 const StrategyVersionsPage = lazy(() => import("../pages/strategy/StrategyVersionsPage"));
@@ -113,6 +114,7 @@ const routeDefinitions: readonly RouteDefinition[] = [
   { id: "market-sector", path: "/market/sector", title: "行业与板块", description: "行业与板块状态的只读观察" },
   { id: "research-candidates", path: "/research/candidates", title: "研究候选", description: "候选、排除、待复核和不可交易状态" },
   { id: "research-deep", path: "/research/deep", title: "深度分析", description: "多维研究证据、数据截止和风险说明" },
+  { id: "research-news-review", path: "/research/news-review", title: "新闻人工复核", description: "标题链接关联的追加式人工审计" },
   { id: "research-excluded", path: "/research/excluded", title: "排除与阻断", description: "未满足研究和交易门禁的原因" },
   { id: "research-holdings", path: "/research/holdings", title: "持仓再评估", description: "已有持仓的只读研究复核" },
   { id: "trade-control", path: "/trade/control", title: "交易运行控制", description: "模式、授权和执行门禁的只读状态" },
@@ -190,6 +192,7 @@ const routeElements: Readonly<Record<string, ReactNode>> = {
   "/market/sector": <MarketSectorPage />,
   "/research/candidates": <ResearchCandidatesPage />,
   "/research/deep": <ResearchDeepPage />,
+  "/research/news-review": <NewsEvidenceReviewPage />,
   "/research/excluded": <ResearchExcludedPage />,
   "/research/holdings": <ResearchHoldingsPage />,
   "/data/certified": <CertifiedStorePage />,

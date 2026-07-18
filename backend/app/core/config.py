@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     QWEN_TIMEOUT: int = 30
 
     A_STOCK_DATA_URL: str = "http://a-stock-data:8080"
+    A_STOCK_DATA_COMMAND_TOKEN: str = ""
 
     CHROMA_PERSIST_DIR: str = "/app/vector_db"
     CHROMA_COLLECTION_REPORTS: str = "research_reports"
@@ -74,8 +75,12 @@ class Settings(BaseSettings):
     # 成交后自动跑券商对账
     AUTO_RECONCILE_ON_FILL: bool = True
 
-    # 可选 API 鉴权：为空则不校验（开发默认）；生产建议设置强随机值
+    # Legacy global API key is no longer an authorization source.
     API_KEY: str = ""
+    API_ALLOW_ANONYMOUS_READS: bool = True
+    API_LEGACY_KEY_MIGRATION_ENABLED: bool = False
+    API_SESSION_COOKIE_NAME: str = "aq_session"
+    API_SESSION_TTL_SECONDS: int = 28_800
 
     # 风控阈值（可被环境变量覆盖；DB risk_rules 仅作展示时可同步）
     MAX_SINGLE_POSITION_RATIO: float = 0.10
@@ -108,7 +113,19 @@ class Settings(BaseSettings):
     DINGTALK_QUIET_BYPASS_LEVELS: str = "CRITICAL"
 
     def is_production(self) -> bool:
-        return self.APP_ENV == "production"
+        return self.APP_ENV.strip().lower() == "production"
+
+    def validate_api_security_settings(self) -> None:
+        if self.API_SESSION_TTL_SECONDS < 300:
+            raise RuntimeError("API_SESSION_TTL_SECONDS 必须不少于 300 秒")
+        if not self.is_production():
+            return
+        if self.API_ALLOW_ANONYMOUS_READS:
+            raise RuntimeError("production 不允许 API_ALLOW_ANONYMOUS_READS=true")
+        if self.API_LEGACY_KEY_MIGRATION_ENABLED:
+            raise RuntimeError("production 不允许旧 API_KEY 鉴权迁移桥接")
+        if len(self.SECRET_KEY.strip()) < 32:
+            raise RuntimeError("production SECRET_KEY 至少需要 32 个字符")
 
     def dingtalk_levels(self) -> set[str]:
         raw = self.DINGTALK_ALERT_LEVELS or "CRITICAL,ERROR"

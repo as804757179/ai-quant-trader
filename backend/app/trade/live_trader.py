@@ -18,6 +18,7 @@ from app.trade.base_trader import (
     Position,
 )
 from app.trade.idempotency import build_idempotency_key
+from app.trade.ashare_rules import fees
 from app.trade.qmt.adapter import QmtAdapter
 
 logger = get_logger(__name__, feature=FEATURE_TRADE)
@@ -69,7 +70,7 @@ class LiveTrader(BaseTrader):
             order_type=request.order_type,
             limit_price=request.limit_price,
         )
-        idempotency_key = build_idempotency_key(
+        idempotency_key = request.idempotency_key or build_idempotency_key(
             mode=self.mode,
             signal_id=request.signal_id,
             stock_code=request.stock_code,
@@ -77,6 +78,8 @@ class LiveTrader(BaseTrader):
             quantity=request.quantity,
             order_type=request.order_type,
             limit_price=request.limit_price,
+            principal_id=request.principal_id,
+            client_intent_key=request.client_intent_key,
         )
 
         try:
@@ -103,10 +106,30 @@ class LiveTrader(BaseTrader):
             )
 
         status = broker_order.status
+        filled_quantity = int(broker_order.filled_quantity or 0)
+        if status == "FILLED" and filled_quantity != request.quantity:
+            logger.error(
+                "live_submit_terminal_quantity_mismatch",
+                order_id=order_id,
+                broker_order_id=broker_order.broker_order_id,
+                filled_quantity=filled_quantity,
+                order_quantity=request.quantity,
+            )
+            status = "PARTIAL" if filled_quantity > 0 else "SUBMITTED"
+        elif 0 < filled_quantity < request.quantity and status in {"PENDING", "SUBMITTED"}:
+            logger.warning(
+                "live_submit_partial_quantity_status_normalized",
+                order_id=order_id,
+                broker_order_id=broker_order.broker_order_id,
+                remote_status=status,
+                filled_quantity=filled_quantity,
+                order_quantity=request.quantity,
+            )
+            status = "PARTIAL"
         commission = 0.0
-        if status == "FILLED" and broker_order.avg_fill_price > 0:
-            amount = broker_order.avg_fill_price * broker_order.filled_quantity
-            commission = max(amount * 0.0003, 5.0)
+        if filled_quantity > 0 and broker_order.avg_fill_price > 0:
+            amount = broker_order.avg_fill_price * filled_quantity
+            commission, _, _ = fees(request.side, amount)
 
         await self.db.execute(
             text(
@@ -139,7 +162,7 @@ class LiveTrader(BaseTrader):
                 "order_type": request.order_type,
                 "quantity": request.quantity,
                 "limit_price": request.limit_price,
-                "filled_quantity": broker_order.filled_quantity,
+                "filled_quantity": filled_quantity,
                 "avg_fill_price": broker_order.avg_fill_price or None,
                 "commission": commission,
                 "status": status if status in (
@@ -162,7 +185,7 @@ class LiveTrader(BaseTrader):
             },
         )
 
-        if status == "FILLED":
+        if filled_quantity > 0:
             # Mock：以适配器账本为源镜像到 DB，避免双套现金/佣金算法漂移
             if getattr(self.adapter, "name", "") == "mock":
                 await self._mirror_broker_state_to_local()
@@ -170,7 +193,7 @@ class LiveTrader(BaseTrader):
                 await self._sync_fill_to_local(
                     request,
                     fill_price=broker_order.avg_fill_price,
-                    quantity=broker_order.filled_quantity,
+                    quantity=filled_quantity,
                     commission=commission,
                 )
                 await recompute_account_assets(self.db, self.mode)
@@ -187,6 +210,7 @@ class LiveTrader(BaseTrader):
             status=status,
             broker_order_id=broker_order.broker_order_id,
             message=broker_order.message or f"{self.adapter.name}:{status}",
+            filled_quantity=filled_quantity,
         )
 
     async def _mirror_broker_state_to_local(self) -> None:
@@ -430,24 +454,45 @@ class LiveTrader(BaseTrader):
     async def cancel_order(self, order_id: str) -> bool:
         await self._ensure_connected()
         result = await self.db.execute(
-            text("SELECT broker_order_id FROM trade.orders WHERE id = :id"),
+            text(
+                """
+                SELECT id, stock_code, side, quantity, status, filled_quantity,
+                       avg_fill_price, commission, broker_order_id
+                FROM trade.orders WHERE id = :id
+                """
+            ),
             {"id": order_id},
         )
         row = result.mappings().first()
         if not row or not row["broker_order_id"]:
             return False
         ok = await self.adapter.cancel_order(row["broker_order_id"])
-        if ok:
-            await self.db.execute(
-                text(
-                    """
-                    UPDATE trade.orders
-                    SET status = 'CANCELLED', cancelled_at = NOW()
-                    WHERE id = :id
-                    """
-                ),
-                {"id": order_id},
+        if not ok:
+            return False
+        try:
+            remote = await self.adapter.query_order(row["broker_order_id"])
+        except Exception as exc:
+            logger.warning(
+                "live_cancel_snapshot_unavailable",
+                order_id=order_id,
+                broker_order_id=row["broker_order_id"],
+                error_type=type(exc).__name__,
             )
+            return True
+        if remote is None:
+            logger.warning(
+                "live_cancel_snapshot_missing",
+                order_id=order_id,
+                broker_order_id=row["broker_order_id"],
+            )
+            return True
+        from app.trade.order_sync import OrderSyncService
+
+        await OrderSyncService(self.db, self.adapter, mode=self.mode).apply_broker_snapshot(
+            order_id,
+            dict(row),
+            remote,
+        )
         return ok
 
     async def get_order_status(self, order_id: str) -> FillResult:

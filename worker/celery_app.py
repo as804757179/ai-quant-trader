@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from celery import Celery
 from celery.schedules import crontab
 from kombu import Exchange, Queue
@@ -9,6 +11,7 @@ from kombu import Exchange, Queue
 from config import get_broker_url, get_redis_url, get_result_backend
 from logging_setup import setup_logging
 
+os.environ.setdefault("WORKER_ASYNC_NULL_POOL", "true")
 setup_logging()
 
 app = Celery("quant_trader")
@@ -40,6 +43,8 @@ app.conf.update(
         "tasks.sync_fund_flow": {"queue": "normal"},
         "tasks.update_available_quantity": {"queue": "normal"},
         "tasks.run_backtest_task": {"queue": "low"},
+        "tasks.execute_operation_job": {"queue": "normal"},
+        "tasks.recover_operation_jobs": {"queue": "normal"},
         "tasks.index_new_announcements": {"queue": "low"},
         "tasks.archive_daily_data": {"queue": "low"},
         "tasks.sync_live_positions_from_broker": {"queue": "low"},
@@ -68,6 +73,11 @@ app.conf.update(
         "ai-signal-scan-1min": {
             "task": "tasks.run_signal_scan",
             "schedule": 60.0,
+            "options": {"queue": "normal"},
+        },
+        "recover-operation-jobs-30s": {
+            "task": "tasks.recover_operation_jobs",
+            "schedule": 30.0,
             "options": {"queue": "normal"},
         },
         "update-available-qty": {
@@ -137,5 +147,6 @@ app.autodiscover_tasks(["tasks"])
 
 # 确保任务在 beat 启动前已加载
 import tasks.ai  # noqa: E402, F401
+import tasks.jobs  # noqa: E402, F401
 import tasks.maintenance  # noqa: E402, F401
 import tasks.market  # noqa: E402, F401

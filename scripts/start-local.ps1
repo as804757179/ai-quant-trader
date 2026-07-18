@@ -139,9 +139,11 @@ if ($FrontendOnly) {
 }
 Import-EnvFile (Join-Path $Root $EnvFile)
 $env:PYTHONUTF8 = "1"; $env:PYTHONDONTWRITEBYTECODE = "1"; $env:PYTHONPATH = "$Root\worker;$Root\backend"
-foreach ($required in @("DATABASE_URL", "REDIS_URL", "CELERY_BROKER_URL", "CELERY_RESULT_BACKEND", "A_STOCK_DATA_URL", "SECRET_KEY")) {
+foreach ($required in @("DATABASE_URL", "REDIS_URL", "CELERY_BROKER_URL", "CELERY_RESULT_BACKEND", "A_STOCK_DATA_URL", "A_STOCK_DATA_COMMAND_TOKEN", "WORKER_API_CREDENTIAL", "SECRET_KEY")) {
     if (-not (Get-Item "Env:$required" -ErrorAction SilentlyContinue).Value) { Fail "缺少环境变量：$required" }
 }
+if ($env:A_STOCK_DATA_COMMAND_TOKEN.Length -lt 32 -or $env:A_STOCK_DATA_COMMAND_TOKEN -match "(?i)replace-with-|change_me") { Fail "A_STOCK_DATA_COMMAND_TOKEN 必须是至少 32 字节的非默认随机值" }
+if ($env:WORKER_API_CREDENTIAL.Length -lt 32 -or $env:WORKER_API_CREDENTIAL -match "(?i)replace-with-|change_me|changeme|123456|test") { Fail "WORKER_API_CREDENTIAL 必须是至少 32 字节的非默认随机凭据" }
 if ($env:TRADE_MODE -eq "live" -and $env:QMT_FORCE_MOCK -match "^(1|true|yes)$") { Fail "live 模式禁止 QMT_FORCE_MOCK=true" }
 Test-ExistingCeleryProcess
 if (-not (Test-Port 5432) -or -not (Test-Port 6379)) {

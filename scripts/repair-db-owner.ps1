@@ -29,7 +29,15 @@ import os
 import sys
 import asyncpg
 
-TARGETS = ("backtest.results", "trade.orders")
+TARGETS = (
+    "backtest.results",
+    "trade.orders",
+    "market.quotes",
+    "market.fund_flows",
+    "market.quote_batches",
+    "market.quote_provenance",
+    "audit.operation_logs",
+)
 
 def normalize(url):
     return url.replace("postgresql+asyncpg://", "postgresql://", 1)

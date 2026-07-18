@@ -532,6 +532,33 @@ textarea:focus-visible,
   font-size: 13px;
 }
 
+.news-review-editor {
+  display: grid;
+  gap: 14px;
+}
+
+.news-review-editor label {
+  display: grid;
+  gap: 8px;
+  color: #b9c8dc;
+  font-size: 13px;
+}
+
+.news-review-editor__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.news-review-editor__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  color: #8498b4;
+  font-size: 13px;
+}
+
 .warning-note {
   border-left-color: #eb4b59;
 }
@@ -648,6 +675,38 @@ textarea:focus-visible,
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
+}
+
+.equity-chart {
+  display: grid;
+  min-height: 210px;
+  align-content: center;
+}
+
+.equity-chart svg {
+  width: 100%;
+  min-height: 170px;
+}
+
+.equity-chart__axis {
+  stroke: rgba(133, 157, 187, 0.3);
+  stroke-width: 1;
+}
+
+.equity-chart__line {
+  fill: none;
+  stroke: #1687ff;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.equity-chart__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .service-card {
@@ -850,7 +909,8 @@ textarea:focus-visible,
   .metric-grid,
   .data-meta-bar,
   .service-grid,
-  .mode-grid {
+  .mode-grid,
+  .news-review-editor__fields {
     grid-template-columns: minmax(0, 1fr);
   }
 

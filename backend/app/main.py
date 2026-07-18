@@ -6,8 +6,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import text
 
-from app.api import ai, backtest, portfolio, risk, screener, stock, strategy, trade, ws
-from app.core.auth import api_key_middleware
+from app.api import (
+    ai,
+    auth,
+    backtest,
+    jobs,
+    portfolio,
+    research,
+    risk,
+    screener,
+    stock,
+    strategy,
+    trade,
+    ws,
+)
+from app.core.auth import api_security_middleware
 from app.core.config import settings
 from app.core.logging import (
     FEATURE_MONITOR,
@@ -20,6 +33,7 @@ from app.core.logging import (
     new_request_id,
     setup_logging,
 )
+from app.core.response import error, ok, register_exception_handlers
 from app.db import engine
 from app.monitoring.metrics import metrics_response, set_ws_connections
 from app.ws.manager import ws_manager
@@ -29,6 +43,7 @@ log = get_logger(__name__, feature=FEATURE_SYSTEM)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings.validate_api_security_settings()
     setup_logging()
     log.info(
         "application_starting",
@@ -36,10 +51,10 @@ async def lifespan(app: FastAPI):
         trade_mode=settings.TRADE_MODE,
         log_level=settings.LOG_LEVEL,
     )
-    if settings.is_production() and not (settings.API_KEY or "").strip():
+    if (settings.API_KEY or "").strip():
         log.warning(
-            "production_api_key_missing",
-            hint="生产环境建议设置 API_KEY，否则交易等接口无鉴权",
+            "legacy_api_key_ignored",
+            hint="API_KEY 不再作为接口授权来源，请使用主体凭据或浏览器会话",
         )
     if settings.TRADE_MODE == "live" and not (settings.LIVE_CONFIRM_TOKEN or "").strip():
         log.warning(
@@ -63,11 +78,12 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="AI Quant Trader Pro API",
     version="1.0.0",
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json",
+    docs_url=None if settings.is_production() else "/api/docs",
+    redoc_url=None if settings.is_production() else "/api/redoc",
+    openapi_url=None if settings.is_production() else "/api/openapi.json",
     lifespan=lifespan,
 )
+register_exception_handlers(app)
 
 app.add_middleware(
     CORSMiddleware,
@@ -81,7 +97,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 @app.middleware("http")
 async def api_auth_middleware(request: Request, call_next):
-    return await api_key_middleware(request, call_next)
+    return await api_security_middleware(request, call_next)
 
 
 @app.middleware("http")
@@ -170,36 +186,45 @@ async def global_request_logging(request: Request, call_next):
 
 
 app.include_router(stock.router, prefix="/api/v1/stock", tags=["股票数据"])
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["认证"])
 app.include_router(ai.router, prefix="/api/v1/ai", tags=["AI分析"])
 app.include_router(screener.router, prefix="/api/v1/screener", tags=["选股"])
 app.include_router(strategy.router, prefix="/api/v1/strategy", tags=["策略管理"])
 app.include_router(backtest.router, prefix="/api/v1/backtest", tags=["回测"])
+app.include_router(jobs.router, prefix="/api/v1/jobs", tags=["异步任务"])
 app.include_router(risk.router, prefix="/api/v1/risk", tags=["风控"])
 app.include_router(trade.router, prefix="/api/v1/trade", tags=["交易"])
 app.include_router(portfolio.router, prefix="/api/v1/portfolio", tags=["持仓资产"])
+app.include_router(research.router, prefix="/api/v1/research", tags=["研究资格"])
 app.include_router(ws.router, prefix="/ws", tags=["WebSocket"])
 
 
 @app.get("/api/v1/health")
 async def health_check():
-    checks: dict[str, str] = {"api": "ok"}
+    return {"status": "ok", "version": "1.0.0", "kind": "liveness"}
+
+
+@app.get("/api/v1/readiness")
+async def readiness_check():
     try:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
-        checks["database"] = "ok"
     except Exception as exc:
-        checks["database"] = f"error: {exc}"
         get_logger(__name__, feature=FEATURE_MONITOR).warning(
-            "health_db_failed", error=str(exc)
+            "readiness_db_failed", error_type=type(exc).__name__
         )
-
-    status = "ok" if checks.get("database") == "ok" else "degraded"
-    return {"status": status, "version": "1.0.0", "checks": checks}
+        error(
+            "数据库依赖暂时不可用",
+            "READINESS_UNAVAILABLE",
+            503,
+            retryable=True,
+        )
+    return ok({"status": "ok", "checks": {"database": "ok"}})
 
 
 @app.get("/metrics")
 async def prometheus_metrics():
-    """Prometheus 抓取端点（无需鉴权）。"""
+    """Prometheus scrape endpoint with scope enforcement."""
     try:
         set_ws_connections(ws_manager.connection_count)
     except Exception:

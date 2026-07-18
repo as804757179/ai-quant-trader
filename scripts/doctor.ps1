@@ -13,6 +13,7 @@ $warnings = [System.Collections.Generic.List[string]]::new()
 $mcpCount = 0
 $mcpMemoryMb = 0
 $replCount = 0
+$replMemoryMb = 0
 $openMcpCircuits = 0
 
 function Add-Issue([string]$Message) { $script:issues.Add($Message) }
@@ -29,11 +30,13 @@ if (-not $SkipCodexProcessCheck) {
     $mcpProcesses = @($processes | Where-Object { $_.Name -eq "node.exe" -and $_.CommandLine -match "[/\\]mcp[/\\]server\.mjs" })
     $mcpCount = $mcpProcesses.Count
     $mcpMemoryMb = [math]::Round((($mcpProcesses | Measure-Object WorkingSetSize -Sum).Sum / 1MB))
-    $replCount = @($processes | Where-Object { $_.Name -eq "node.exe" -and $_.CommandLine -match "node_repl" }).Count
-    if ($mcpCount -gt 6) { Add-Warning "检测到 $mcpCount 个 MCP Node 进程，共占用约 $mcpMemoryMb MB；若数量继续增长请重启 Codex" }
+    $replProcesses = @($processes | Where-Object { $_.Name -eq "node_repl.exe" -or ($_.Name -eq "node.exe" -and $_.CommandLine -match "node_repl") })
+    $replCount = $replProcesses.Count
+    $replMemoryMb = [math]::Round((($replProcesses | Measure-Object WorkingSetSize -Sum).Sum / 1MB))
+    if ($mcpCount -gt 2) { Add-Warning "检测到 $mcpCount 个 MCP Node 进程，共占用约 $mcpMemoryMb MB；已超过当前基线 2 个" }
     if ($mcpCount -ge 12 -or $mcpMemoryMb -gt 768) { Add-Issue "MCP 进程资源占用已超过安全阈值，请重启 Codex" }
-    if ($replCount -gt 3) { Add-Warning "检测到 $replCount 个 Node REPL 进程；若任务已结束请重启 Codex" }
-    if ($replCount -gt 8) { Add-Issue "Node REPL 残留已超过安全阈值，请重启 Codex" }
+    if ($replCount -gt 1) { Add-Warning "检测到 $replCount 个 Node REPL 进程，共占用约 $replMemoryMb MB；已超过当前基线 1 个" }
+    if ($replCount -gt 8 -or $replMemoryMb -gt 256) { Add-Issue "Node REPL 残留已超过安全阈值，请重启 Codex" }
 }
 
 $backendPy = Join-Path $Root "backend\.venv\Scripts\python.exe"
@@ -134,6 +137,7 @@ $result = [ordered]@{
     mcp_process_count = $mcpCount
     mcp_memory_mb = $mcpMemoryMb
     repl_process_count = $replCount
+    repl_memory_mb = $replMemoryMb
     open_mcp_circuits = $openMcpCircuits
     issues = @($issues)
     warnings = @($warnings)

@@ -48,6 +48,8 @@ class AgentOrchestrator:
     async def run(self, code: str, context: dict[str, Any]) -> dict[str, Any]:
         """完整分析流程：并行调度 Agent → 风控评估 → 信号聚合。"""
         run_context = {**context, "code": code}
+        if run_context.get("analysis_context_status") != "ready":
+            return self._blocked_context_result(code, run_context)
         if "rag_context" not in run_context:
             run_context["rag_context"] = await self.rag_engine.build_rag_context(
                 code
@@ -127,6 +129,54 @@ class AgentOrchestrator:
             "agent_results": agent_results,
             "agent_statuses": agent_statuses,
             "latency_ms": total_latency_ms,
+        }
+
+    def _blocked_context_result(
+        self, code: str, context: dict[str, Any]
+    ) -> dict[str, Any]:
+        blockers = context.get("analysis_context_blockers") or []
+        source_names = sorted(
+            {
+                str(item.get("source"))
+                for item in blockers
+                if isinstance(item, dict) and item.get("source")
+            }
+        )
+        source_summary = ", ".join(source_names) if source_names else "未声明的关键数据源"
+        reason = (
+            f"AI 分析上下文未通过数据与研究资格门禁：{source_summary}。"
+            "不调用模型，仅返回 HOLD。"
+        )
+        agent_results = {
+            name: AgentResult(
+                agent_name=name,
+                model="not-run",
+                output={"_degraded": True, "reason": reason},
+                status=AgentStatus.DEGRADED,
+                latency_ms=0,
+                error_msg="analysis context gate blocked",
+            )
+            for name in ("trend", "fundamental", "sentiment", "shortterm", "risk")
+        }
+        try:
+            current_price = float(context.get("price") or 0)
+        except (TypeError, ValueError):
+            current_price = 0.0
+        signal = self.aggregator.aggregate(
+            agent_results,
+            stock_code=code,
+            current_price=current_price,
+        )
+        signal["reason"] = reason
+        signal["confidence"] = 0.0
+        return {
+            "code": code,
+            "signal": signal,
+            "agent_results": agent_results,
+            "agent_statuses": {
+                name: result.status for name, result in agent_results.items()
+            },
+            "latency_ms": 0,
         }
 
     async def analyze(self, code: str, context: dict[str, Any]) -> dict[str, Any]:

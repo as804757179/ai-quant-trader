@@ -9,6 +9,8 @@ param(
     [int]$MinFreeMemoryMb = 3072,
     [int]$MaxMcpCount = 12,
     [int]$MaxMcpMemoryMb = 768,
+    [int]$MaxReplCount = 9,
+    [int]$MaxReplMemoryMb = 256,
     [switch]$Once
 )
 
@@ -67,9 +69,16 @@ function Get-WatchdogStatus {
     $mcpProcesses = @($processes | Where-Object { $_.Name -eq "node.exe" -and $_.CommandLine -match "[/\\]mcp[/\\]server\.mjs" })
     $mcpCount = $mcpProcesses.Count
     $mcpMemoryMb = [math]::Round((($mcpProcesses | Measure-Object WorkingSetSize -Sum).Sum / 1MB))
-    if ($mcpCount -gt 6) { $warnings.Add("MCP Node 进程数为 $mcpCount，共约 $mcpMemoryMb MB") }
+    $replProcesses = @($processes | Where-Object { $_.Name -eq "node_repl.exe" -or ($_.Name -eq "node.exe" -and $_.CommandLine -match "node_repl") })
+    $replCount = $replProcesses.Count
+    $replMemoryMb = [math]::Round((($replProcesses | Measure-Object WorkingSetSize -Sum).Sum / 1MB))
+    if ($mcpCount -gt 2) { $warnings.Add("MCP Node 进程数为 $mcpCount，共约 $mcpMemoryMb MB，已超过当前基线 2 个") }
     if ($mcpCount -ge $MaxMcpCount -or $mcpMemoryMb -gt $MaxMcpMemoryMb) {
         $issues.Add("MCP 进程资源超过安全阈值，请重启 Codex")
+    }
+    if ($replCount -gt 1) { $warnings.Add("Node REPL 进程数为 $replCount，共约 $replMemoryMb MB，已超过当前基线 1 个") }
+    if ($replCount -ge $MaxReplCount -or $replMemoryMb -gt $MaxReplMemoryMb) {
+        $issues.Add("Node REPL 进程资源超过安全阈值，请重启 Codex")
     }
 
     return [ordered]@{
@@ -81,6 +90,8 @@ function Get-WatchdogStatus {
             free_memory_mb = $freeMemoryMb
             mcp_process_count = $mcpCount
             mcp_memory_mb = $mcpMemoryMb
+            repl_process_count = $replCount
+            repl_memory_mb = $replMemoryMb
         }
     }
 }

@@ -3,25 +3,42 @@ import axios from "axios";
 const client = axios.create({
   baseURL: "/api/v1",
   timeout: 120000, // 全市场同步/回测可能较久
+  withCredentials: true,
   headers: {
     "Accept": "application/json",
     "Content-Type": "application/json; charset=utf-8",
   },
 });
 
-// 生产环境可在构建时注入 VITE_API_KEY，对应后端 API_KEY
-const apiKey = import.meta.env.VITE_API_KEY as string | undefined;
-if (apiKey) {
-  client.defaults.headers.common["X-API-Key"] = apiKey;
+let csrfToken: string | undefined;
+
+export function setCsrfToken(token: string | undefined): void {
+  csrfToken = token;
 }
+
+client.interceptors.request.use((config) => {
+  const method = config.method?.toUpperCase();
+  if (csrfToken && method && !["GET", "HEAD", "OPTIONS"].includes(method)) {
+    config.headers["X-CSRF-Token"] = csrfToken;
+  }
+  return config;
+});
 
 export interface APIResponse<T = unknown> {
   success: boolean;
   data: T;
   message: string;
+  timestamp?: string;
+  requestId?: string;
+  error_code?: string;
+  retryable?: boolean;
+  field_errors?: Array<{ field: string; message: string; type?: string }>;
 }
 
 function formatApiError(err: unknown, fallback: string): Error {
+  if (err instanceof Error && err.name === "ApiError") {
+    return err;
+  }
   const ax = err as {
     message?: string;
     code?: string;
@@ -53,12 +70,60 @@ function formatApiError(err: unknown, fallback: string): Error {
   return error;
 }
 
+function normalizeApiResponse<T>(
+  payload: unknown,
+  requestId: string | undefined,
+): APIResponse<T> {
+  if (!payload || typeof payload !== "object" || !("success" in payload) || !("data" in payload)) {
+    const error = new Error("后端返回未登记的响应格式") as Error & { errorCode?: string };
+    error.name = "ApiError";
+    error.errorCode = "API_CONTRACT_INVALID";
+    throw error;
+  }
+  const response = payload as APIResponse<T>;
+  if (!response.success) {
+    const error = new Error(response.message || "请求被拒绝") as Error & {
+      status?: number;
+      errorCode?: string;
+      retryable?: boolean;
+      fieldErrors?: APIResponse<T>["field_errors"];
+      requestId?: string;
+    };
+    error.name = "ApiError";
+    error.errorCode = response.error_code;
+    error.retryable = response.retryable;
+    error.fieldErrors = response.field_errors;
+    error.requestId = requestId;
+    throw error;
+  }
+  return { ...response, requestId };
+}
+
 export async function get<T>(url: string, params?: Record<string, unknown>) {
   try {
-    const res = await client.get<APIResponse<T>>(url, { params });
-    return res.data;
+    const res = await client.get<APIResponse<T> | T>(url, { params });
+    return normalizeApiResponse<T>(
+      res.data,
+      res.headers["x-request-id"] as string | undefined,
+    );
   } catch (err) {
     throw formatApiError(err, "请求失败");
+  }
+}
+
+export async function post<T>(
+  url: string,
+  data?: unknown,
+  options?: { headers?: Record<string, string> },
+) {
+  try {
+    const res = await client.post<APIResponse<T> | T>(url, data, options);
+    return normalizeApiResponse<T>(
+      res.data,
+      res.headers["x-request-id"] as string | undefined,
+    );
+  } catch (err) {
+    throw formatApiError(err, "提交失败");
   }
 }
 

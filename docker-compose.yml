@@ -17,6 +17,7 @@ services:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
+      WORKER_API_CREDENTIAL: ""
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/postgres/postgresql.conf:/etc/postgresql/postgresql.conf
@@ -33,6 +34,8 @@ services:
   redis:
     image: redis:7-alpine
     <<: *common-env
+    environment:
+      WORKER_API_CREDENTIAL: ""
     command: redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 2gb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
@@ -48,6 +51,9 @@ services:
       context: ./a-stock-data/service
       dockerfile: Dockerfile
     <<: *common-env
+    environment:
+      A_STOCK_DATA_COMMAND_TOKEN: ${A_STOCK_DATA_COMMAND_TOKEN:?请配置 a-stock-data 内部刷新命令 Token}
+      WORKER_API_CREDENTIAL: ""
     ports:
       - "127.0.0.1:8080:8080"
     healthcheck:
@@ -61,6 +67,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     <<: *common-env
+    environment:
+      A_STOCK_DATA_COMMAND_TOKEN: ${A_STOCK_DATA_COMMAND_TOKEN:?请配置 a-stock-data 内部刷新命令 Token}
+      WORKER_API_CREDENTIAL: ""
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -86,6 +95,8 @@ services:
     environment:
       API_BASE_URL: http://api:8000
       WORKER_BACKEND_MODE: http
+      WORKER_API_CREDENTIAL: ${WORKER_API_CREDENTIAL:?请配置 Worker 服务主体凭据}
+      A_STOCK_DATA_COMMAND_TOKEN: ${A_STOCK_DATA_COMMAND_TOKEN:?请配置 a-stock-data 内部刷新命令 Token}
     command: celery -A celery_app worker -Q high,normal,low --concurrency=4 --loglevel=info
     depends_on:
       - redis
@@ -101,6 +112,8 @@ services:
       context: .
       dockerfile: worker/Dockerfile
     <<: *common-env
+    environment:
+      WORKER_API_CREDENTIAL: ""
     command: celery -A celery_app beat --loglevel=info --scheduler redbeat.RedBeatScheduler
     depends_on:
       - redis
@@ -108,6 +121,8 @@ services:
   flower:
     image: mher/flower:2.0
     <<: *common-env
+    environment:
+      WORKER_API_CREDENTIAL: ""
     command: celery flower --broker=${REDIS_URL} --port=5555
     ports:
       - "127.0.0.1:5555:5555"

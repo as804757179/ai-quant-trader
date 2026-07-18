@@ -25,8 +25,9 @@ export function emptyState<T>(
   data: T,
   message = "暂无数据",
   sourceVersion = "待接入",
+  provenance?: Partial<DataProvenance>,
 ): DisplayState<T> {
-  return createEmptyState(data, message, sourceVersion);
+  return createEmptyState(data, message, sourceVersion, provenance);
 }
 
 export function pendingState(message = "待接入", sourceVersion = "待接入"): DisplayState<never> {

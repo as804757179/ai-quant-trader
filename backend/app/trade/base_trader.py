@@ -1,6 +1,10 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.core.auth import Principal
 
 
 @dataclass
@@ -16,6 +20,11 @@ class OrderRequest:
     operator: str | None = None
     order_reason: str | None = None
     caller: str | None = None
+    principal: "Principal | None" = None
+    principal_id: str | None = None
+    client_intent_key: str | None = None
+    intent_id: str | None = None
+    idempotency_key: str | None = None
     approval_id: str | None = None
     approval_status: str = "pending"
     risk_check_id: str | None = None
@@ -29,6 +38,7 @@ class OrderResult:
     status: str
     broker_order_id: str | None = None
     message: str = ""
+    filled_quantity: int = 0
 
 
 @dataclass

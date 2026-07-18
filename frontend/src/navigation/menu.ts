@@ -28,6 +28,7 @@ export const NAVIGATION: readonly NavigationNode[] = [
     children: [
       { id: "research-candidates", label: "研究候选", path: "/research/candidates" },
       { id: "research-deep", label: "深度分析", path: "/research/deep" },
+      { id: "research-news-review", label: "新闻人工复核", path: "/research/news-review" },
       { id: "research-excluded", label: "排除与阻断", path: "/research/excluded" },
       { id: "research-holdings", label: "持仓再评估", path: "/research/holdings" },
     ],

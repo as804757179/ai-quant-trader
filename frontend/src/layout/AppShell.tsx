@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { NAVIGATION, type NavigationNode } from "../navigation/menu";
-import { RELEASE_LOCKS } from "../presentation/contracts";
+import { useExecutionStatus } from "../presentation/coreModels";
 import { formatChinaDateTime } from "../presentation/time";
 import StatusBadge from "../ui/StatusBadge";
 
@@ -80,6 +80,10 @@ function NavigationItem({ node, depth = 0 }: { node: NavigationNode; depth?: num
 
 export default function AppShell({ children }: AppShellProps) {
   const [clock, setClock] = useState(() => formatChinaDateTime(new Date()));
+  const execution = useExecutionStatus();
+  const executionKnown = execution.kind === "live" && Boolean(execution.data);
+  const releaseLocks = executionKnown ? execution.data?.release_locks ?? [] : [];
+  const tradingLock = releaseLocks.find((lock) => lock.key === "TRADING_EXECUTION_ENABLED");
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(formatChinaDateTime(new Date())), 1000);
@@ -107,13 +111,13 @@ export default function AppShell({ children }: AppShellProps) {
       <div className="app-shell__content">
         <header className="app-topbar">
           <div className="app-topbar__status">
-            <StatusBadge label="SIMULATION" tone="info" />
-            <StatusBadge label="自动执行：关闭" tone="reject" />
+            <StatusBadge label={executionKnown ? execution.data?.mode?.toUpperCase() ?? "未知" : "模式未知"} tone={executionKnown ? "info" : "reject"} />
+            <StatusBadge label={`自动执行：${executionKnown ? tradingLock?.enabled ? "已开启" : tradingLock ? "关闭" : "状态未知" : "状态未知"}`} tone="reject" />
             <StatusBadge label="数据：待审核" tone="review" />
           </div>
           <div className="app-topbar__right">
             <span className="app-topbar__clock">{clock}</span>
-            <span className="app-topbar__lock-count">{RELEASE_LOCKS.length} 项发布锁关闭</span>
+            <span className="app-topbar__lock-count">{executionKnown ? releaseLocks.length ? `${releaseLocks.filter((lock) => !lock.enabled).length} 项发布锁关闭` : "发布锁状态未知" : "发布锁状态未知"}</span>
           </div>
         </header>
         <main className="app-shell__main">{children}</main>

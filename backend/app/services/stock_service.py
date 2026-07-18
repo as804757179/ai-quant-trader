@@ -3,6 +3,7 @@ from unicodedata import normalize
 
 from sqlalchemy import text
 
+from app.data.client import DataFetchResult
 from app.data.service import DataService
 from app.db import get_db
 
@@ -110,7 +111,9 @@ class StockService:
                     f"""
                     SELECT code, name, market, board, sector, sub_sector,
                            list_date, is_st, is_active,
-                           COUNT(*) OVER() AS _total
+                           COUNT(*) OVER() AS _total,
+                           MIN(updated_at) OVER() AS _coverage_started_at,
+                           MAX(updated_at) OVER() AS _coverage_updated_at
                     FROM fundamental.stocks
                     WHERE {where_clause}
                     ORDER BY {order_sql}
@@ -122,9 +125,13 @@ class StockService:
             raw = result.fetchall()
             items = []
             total = 0
+            coverage_started_at = None
+            coverage_updated_at = None
             for r in raw:
                 m = dict(r._mapping)
                 total = int(m.pop("_total", 0) or 0)
+                coverage_started_at = m.pop("_coverage_started_at", None)
+                coverage_updated_at = m.pop("_coverage_updated_at", None)
                 if m.get("list_date"):
                     m["list_date"] = str(m["list_date"])
                 items.append(m)
@@ -132,11 +139,19 @@ class StockService:
                 # 空页再确认 total（无匹配）
                 count_result = await db.execute(
                     text(
-                        f"SELECT COUNT(*) AS cnt FROM fundamental.stocks WHERE {where_clause}"
+                        f"""
+                        SELECT COUNT(*) AS cnt,
+                               MIN(updated_at) AS coverage_started_at,
+                               MAX(updated_at) AS coverage_updated_at
+                        FROM fundamental.stocks WHERE {where_clause}
+                        """
                     ),
                     params,
                 )
-                total = int(count_result.scalar() or 0)
+                count_row = count_result.mappings().one()
+                total = int(count_row["cnt"] or 0)
+                coverage_started_at = count_row["coverage_started_at"]
+                coverage_updated_at = count_row["coverage_updated_at"]
 
         return {
             "items": items,
@@ -144,6 +159,17 @@ class StockService:
             "page": page,
             "page_size": page_size,
             "keyword": kw or None,
+            "snapshot": {
+                "source": "fundamental.stocks",
+                "coverage_count": total,
+                "coverage_started_at": (
+                    coverage_started_at.isoformat() if coverage_started_at else None
+                ),
+                "coverage_updated_at": (
+                    coverage_updated_at.isoformat() if coverage_updated_at else None
+                ),
+                "status": "available" if total else "unavailable",
+            },
         }
 
     async def get_profile(self, code: str) -> dict | None:
@@ -173,6 +199,16 @@ class StockService:
             return out
         return None
 
+    async def get_quote_result(self, code: str) -> DataFetchResult:
+        result = await self._data.get_quote_result(code)
+        if result.success and isinstance(result.data, dict):
+            quote = dict(result.data)
+            quote["stock_code"] = code
+            return DataFetchResult(
+                status="success", data=quote, provenance=result.provenance
+            )
+        return result
+
     async def get_kline(
         self, code: str, period: str, limit: int, adj: str
     ) -> list[dict]:
@@ -181,5 +217,11 @@ class StockService:
     async def get_fund_flow(self, code: str, days: int) -> list[dict]:
         return await self._data.get_fund_flow(code, days)
 
+    async def get_fund_flow_result(self, code: str, days: int) -> DataFetchResult:
+        return await self._data.get_fund_flow_result(code, days)
+
     async def get_news(self, code: str, limit: int) -> list[dict]:
         return await self._data.get_news(code, limit)
+
+    async def get_news_result(self, code: str, limit: int) -> DataFetchResult:
+        return await self._data.get_news_result(code, limit)

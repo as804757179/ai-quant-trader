@@ -1,9 +1,24 @@
 import type { TableProps } from "antd";
+import { useState } from "react";
+import { type TradeOrderData, useTradeOrders } from "../../presentation/coreModels";
 import { pendingState } from "../../presentation/readOnlyApi";
+import { formatChinaDateTime } from "../../presentation/time";
 import type { SectionMetric } from "../shared/SectionPage";
 import SectionPage from "../shared/SectionPage";
 
 interface TradeRow { key: string; primary: string; source: string; approval: string; dataStatus: string; riskResult: string; gateResult: string; idempotencyKey: string; }
+
+interface OrderAuditRow {
+  key: string;
+  orderId: string;
+  instrument: string;
+  status: string;
+  source: string;
+  approval: string;
+  dataStatus: string;
+  riskCheck: string;
+  createdAt: string;
+}
 
 interface TradePageDefinition {
   title: string;
@@ -21,6 +36,38 @@ const orderColumns: TableProps<TradeRow>["columns"] = [
   { title: "订单/决策 ID", dataIndex: "primary", width: 210 }, { title: "来源/调用者", dataIndex: "source", width: 180 }, { title: "审批编号", dataIndex: "approval", width: 180 }, { title: "数据认证", dataIndex: "dataStatus", width: 160 }, { title: "Risk Engine", dataIndex: "riskResult", width: 170 }, { title: "Execution Gate", dataIndex: "gateResult", width: 180 }, { title: "幂等键", dataIndex: "idempotencyKey", width: 260 },
 ];
 
+const allOrderColumns: TableProps<OrderAuditRow>["columns"] = [
+  { title: "订单 ID", dataIndex: "orderId", width: 210 },
+  { title: "标的 / 方向 / 数量", dataIndex: "instrument", width: 190 },
+  { title: "订单状态", dataIndex: "status", width: 150 },
+  { title: "来源 / 调用者", dataIndex: "source", width: 190 },
+  { title: "审批状态 / 编号", dataIndex: "approval", width: 210 },
+  { title: "数据认证", dataIndex: "dataStatus", width: 190 },
+  { title: "风控检查 ID", dataIndex: "riskCheck", width: 200 },
+  { title: "创建时间", dataIndex: "createdAt", width: 200 },
+];
+
+function joinRecordedValues(values: Array<string | number | null | undefined>): string {
+  const recorded = values
+    .filter((value) => value !== undefined && value !== null && value !== "")
+    .map(String);
+  return recorded.length ? recorded.join(" · ") : "未记录";
+}
+
+function toOrderAuditRow(order: TradeOrderData, index: number): OrderAuditRow {
+  return {
+    key: order.id ?? `order-${index}`,
+    orderId: order.id ?? "未记录",
+    instrument: joinRecordedValues([order.stock_code, order.side, order.quantity]),
+    status: order.status ?? "未记录",
+    source: joinRecordedValues([order.order_source, order.caller]),
+    approval: joinRecordedValues([order.approval_status, order.approval_id]),
+    dataStatus: order.data_certification_status ?? "未记录",
+    riskCheck: order.risk_check_id ?? "未记录",
+    createdAt: formatChinaDateTime(order.created_at),
+  };
+}
+
 function TradeStaticPage(definition: TradePageDefinition) {
   const state = pendingState(definition.emptyDescription, `${definition.relatedId}-ui-v1`);
   return <SectionPage title={definition.title} subtitle={definition.subtitle} relatedId={definition.relatedId} provenance={state.provenance} metrics={definition.metrics} tableTitle={definition.tableTitle} columns={definition.columns} rowKey="key" emptyDescription={state.message} auditTitle="执行安全审计" auditItems={definition.auditItems} note={definition.note} />;
@@ -35,7 +82,59 @@ export function AuthorizationPage() {
 }
 
 export function AllOrdersPage() {
-  return <TradeStaticPage title="全部订单" subtitle="订单来源、审批、数据认证、风控、执行门禁与幂等审计" relatedId="orders:all" tableTitle="订单全量审计" emptyDescription="订单查询接口待接入" columns={orderColumns} metrics={[{ label: "订单总数", value: "待接入", detail: "只读审计数据", tone: "review" }, { label: "Execution Gate", value: "强制", detail: "所有提交前必须检查", tone: "info" }, { label: "Risk Engine", value: "强制", detail: "Gate 通过后仍需风控", tone: "info" }, { label: "自动订单", value: "关闭", detail: "默认拒绝", tone: "reject" }]} auditItems={[{ label: "order_source", value: "必须", detail: "区分 manual、AI recommendation 与 scheduled", tone: "info" }, { label: "数据状态", value: "必须", detail: "记录 certification 与 readiness", tone: "info" }, { label: "幂等键", value: "必须", detail: "防止重复提交", tone: "info" }]} note="当前页面仅展示订单审计字段；不会以展示数据生成订单、成交或资金变动。" />;
+  const [orderPage, setOrderPage] = useState(1);
+  const [orderPageSize, setOrderPageSize] = useState(50);
+  const orders = useTradeOrders(orderPage, orderPageSize);
+  const total = orders.data?.total;
+  const ordersKnown = (orders.kind === "live" || orders.kind === "empty") && typeof total === "number";
+  const rows = (orders.data?.items ?? []).map(toOrderAuditRow);
+
+  const handlePageChange = (nextPage: number, nextPageSize: number) => {
+    setOrderPageSize(nextPageSize);
+    setOrderPage(nextPageSize === orderPageSize ? nextPage : 1);
+  };
+
+  return (
+    <SectionPage
+      title="全部订单"
+      subtitle="仅展示现有接口的 simulation 模式、最近 7 天订单；不合并其他模式或历史窗口"
+      relatedId="orders:all"
+      provenance={orders.provenance}
+      metadataStatusText="只读订单审计 · simulation · 最近 7 天 · 服务器分页 · 不生成订单"
+      statusLabel="只读查询"
+      statusTone="info"
+      metrics={[
+        {
+          label: "当前窗口订单数",
+          value: ordersKnown ? total : "状态未知",
+          detail: ordersKnown ? `simulation · 最近 7 天 · 本页 ${rows.length} 条` : "订单列表不可用，未将其视为 0",
+          tone: ordersKnown ? "info" : "review",
+        },
+        { label: "查询范围", value: "simulation", detail: "现有接口默认模式，未跨模式合并", tone: "info" },
+        { label: "时间窗口", value: "最近 7 天", detail: "现有接口的只读窗口", tone: "review" },
+        { label: "本页能力", value: "只读", detail: "页面不会创建订单、成交或资金变动", tone: "reject" },
+      ]}
+      tableTitle="最近 7 天订单审计"
+      columns={allOrderColumns}
+      tableData={rows}
+      tablePagination={ordersKnown && typeof total === "number" ? {
+        current: orders.data?.page ?? orderPage,
+        pageSize: orders.data?.page_size ?? orderPageSize,
+        total,
+        onChange: handlePageChange,
+      } : undefined}
+      tableSearchEnabled={false}
+      rowKey="key"
+      emptyDescription={orders.message}
+      auditTitle="订单审计边界"
+      auditItems={[
+        { label: "order_source / caller", value: "已展示", detail: "仅显示接口返回的来源与调用者", tone: "info" },
+        { label: "数据状态", value: "已展示", detail: "仅显示接口返回的 data_certification_status", tone: "info" },
+        { label: "幂等关联", value: "未在列表返回", detail: "当前 GET 不返回 client_intent_key，页面不据此声称已审计", tone: "review" },
+      ]}
+      note="订单列表为只读审计视图；分页、总数和排序均来自服务端。它不授予执行权限，也不改变任何交易安全锁。"
+    />
+  );
 }
 
 export function OpenOrdersPage() {

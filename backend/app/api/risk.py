@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Query
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Query, Request
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 
+from app.core.auth import get_request_principal
 from app.core.logging import FEATURE_RISK, get_logger
 from app.core.response import error, ok
 from app.data.cache import CacheManager
@@ -9,39 +10,38 @@ from app.db import get_db
 from app.risk.checker import PreTradeRiskChecker
 from app.risk.fuse import FuseManager
 from app.risk.monitor import RiskMonitor
-from app.schemas.trade import OrderCreateRequest
+from app.risk.alerts import list_persisted_risk_alerts, summarize_persisted_risk_alerts
+from app.risk.rule_snapshot import load_persisted_risk_rule_snapshot
+from app.schemas.trade import PreTradeCheckRequest
+from app.trade.execution_authorization import (
+    ExecutionAuthorizationError,
+    ExecutionAuthorizationService,
+)
+from app.trade.preflight import OrderPreflight, build_dry_run_order_request
 
 logger = get_logger(__name__, feature=FEATURE_RISK)
 router = APIRouter()
 
 
 class FuseRecoverRequest(BaseModel):
-    mode: str = Field(default="simulation")
-    approved_by: str = Field(..., min_length=1)
-    note: str = Field(default="")
+    model_config = ConfigDict(extra="forbid")
+    mode: str = Field(default="simulation", pattern="^(simulation|paper|live)$")
+    fuse_record_id: int = Field(..., ge=1)
+    execution_authorization_id: str = Field(..., min_length=1, max_length=100)
+    note: str = Field(default="", max_length=2000)
 
 
 class FuseActivateRequest(BaseModel):
-    mode: str = Field(default="simulation")
-    reason: str = Field(..., min_length=1)
+    model_config = ConfigDict(extra="forbid")
+    mode: str = Field(default="simulation", pattern="^(simulation|paper|live)$")
+    reason: str = Field(..., min_length=1, max_length=200)
 
 
 @router.get("/rules")
 async def list_risk_rules():
     async with get_db() as db:
-        result = await db.execute(
-            text(
-                """
-                SELECT rule_code, rule_name, rule_type, is_hard, threshold,
-                       action, is_enabled, description
-                FROM risk.risk_rules
-                WHERE is_enabled = TRUE
-                ORDER BY id
-                """
-            )
-        )
-        items = [dict(r._mapping) for r in result.fetchall()]
-    return ok({"items": items})
+        snapshot = await load_persisted_risk_rule_snapshot(db)
+    return ok(snapshot)
 
 
 @router.get("/fuse-status")
@@ -50,28 +50,38 @@ async def get_fuse_status(mode: str = Query("simulation")):
     cache = CacheManager()
     async with get_db() as db:
         fuse = FuseManager(db, cache)
-        is_active = await fuse.is_fused(mode)
-        hist = await db.execute(
-            text(
-                """
-                SELECT id, mode, fuse_reason, triggered_at, is_active,
-                       recovery_approved_by, recovered_at
-                FROM risk.fuse_records
-                WHERE mode = :mode
-                ORDER BY id DESC
-                LIMIT 5
-                """
-            ),
-            {"mode": mode},
-        )
+        state = await fuse.get_state(mode)
         history = []
-        for r in hist.mappings().all():
-            item = dict(r)
-            for k in ("triggered_at", "recovered_at"):
-                if item.get(k):
-                    item[k] = item[k].isoformat()
-            history.append(item)
-    return ok({"mode": mode, "is_active": is_active, "history": history})
+        history_status = "unavailable" if state["reason"] == "db_unavailable" else "available"
+        if history_status == "available":
+            try:
+                hist = await db.execute(
+                    text(
+                        """
+                        SELECT id, mode, fuse_reason, triggered_at, is_active,
+                               recovery_approved_by, recovered_at
+                        FROM risk.fuse_records
+                        WHERE mode = :mode
+                        ORDER BY id DESC
+                        LIMIT 5
+                        """
+                    ),
+                    {"mode": mode},
+                )
+                for r in hist.mappings().all():
+                    item = dict(r)
+                    for k in ("triggered_at", "recovered_at"):
+                        if item.get(k):
+                            item[k] = item[k].isoformat()
+                    history.append(item)
+            except Exception as exc:
+                history_status = "unavailable"
+                logger.warning(
+                    "risk_fuse_history_unavailable",
+                    mode=mode,
+                    error_type=type(exc).__name__,
+                )
+    return ok({**state, "history": history, "history_status": history_status})
 
 
 @router.get("/exposure")
@@ -82,20 +92,37 @@ async def get_risk_exposure(mode: str = Query("simulation")):
         snap = await monitor.get_portfolio_snapshot(mode)
     positions = []
     for code, pos in snap["positions"].items():
-        mv = float(pos.get("market_value") or 0)
-        ratio = mv / snap["total_assets"] if snap["total_assets"] else 0
+        market_value = pos.get("market_value")
+        ratio = (
+            market_value / snap["total_assets"]
+            if market_value is not None
+            and snap["total_assets"] is not None
+            and snap["total_assets"] > 0
+            else None
+        )
         positions.append(
             {
                 "stock_code": code,
                 "name": pos.get("name"),
                 "sector": pos.get("sector"),
-                "market_value": mv,
-                "ratio": round(ratio, 4),
+                "current_price": pos.get("current_price"),
+                "market_value": market_value,
+                "ratio": round(ratio, 4) if ratio is not None else None,
                 "total_qty": pos.get("total_qty"),
-                "unrealized_pnl": float(pos.get("unrealized_pnl") or 0),
+                "unrealized_pnl": pos.get("unrealized_pnl"),
+                "valuation_status": pos.get("valuation_status"),
+                "valuation_freshness": pos.get("valuation_freshness"),
+                "valuation_as_of": pos.get("valuation_as_of"),
+                "valuation_age_seconds": pos.get("valuation_age_seconds"),
+                "valuation_source": pos.get("valuation_source"),
             }
         )
-    positions.sort(key=lambda x: x["market_value"], reverse=True)
+    positions.sort(
+        key=lambda item: (
+            item["market_value"] is None,
+            -(item["market_value"] or 0),
+        )
+    )
     return ok(
         {
             "mode": mode,
@@ -104,40 +131,69 @@ async def get_risk_exposure(mode: str = Query("simulation")):
             "total_market_value": snap["total_market_value"],
             "position_ratio": (
                 snap["total_market_value"] / snap["total_assets"]
-                if snap["total_assets"]
-                else 0
+                if snap["total_market_value"] is not None
+                and snap["total_assets"] is not None
+                and snap["total_assets"] > 0
+                else None
             ),
             "daily_pnl_pct": snap["daily_pnl_pct"],
             "drawdown_from_peak": snap["drawdown_from_peak"],
             "positions": positions,
+            "account_snapshot_time": snap["account_snapshot_time"],
+            "account_snapshot_age_seconds": snap["account_snapshot_age_seconds"],
+            "account_snapshot_freshness": snap["account_snapshot_freshness"],
+            "valuation_status": snap["valuation_status"],
+            "valuation_stale": snap["valuation_stale"],
+            "valuation_freshness": snap["valuation_freshness"],
+            "valuation_as_of": snap["valuation_as_of"],
+            "valuation_age_seconds": snap["valuation_age_seconds"],
+            "valuation_unavailable_positions": snap[
+                "valuation_unavailable_positions"
+            ],
+            "valuation_source": snap["valuation_source"],
+            "source": snap["source"],
+            "source_version": snap["source_version"],
         }
     )
 
 
 @router.post("/fuse/activate")
-async def activate_fuse(body: FuseActivateRequest):
+async def activate_fuse(body: FuseActivateRequest, request: Request):
+    principal = get_request_principal(request)
     logger.warning(
         "risk_fuse_activate_request",
         mode=body.mode,
         reason=body.reason,
+        principal_id=principal.principal_id,
     )
     cache = CacheManager()
     async with get_db() as db:
         monitor = RiskMonitor(db)
         portfolio = await monitor.get_portfolio_snapshot(body.mode)
         fuse = FuseManager(db, cache)
-        await fuse.activate(body.mode, body.reason, portfolio)
-    logger.critical("risk_fuse_activated", mode=body.mode, reason=body.reason)
+        await fuse.activate(
+            body.mode,
+            body.reason,
+            portfolio,
+            activated_by=principal.principal_id,
+        )
+    logger.critical(
+        "risk_fuse_activated",
+        mode=body.mode,
+        reason=body.reason,
+        principal_id=principal.principal_id,
+    )
     return ok({"mode": body.mode, "is_active": True}, message="熔断已触发")
 
 
 @router.post("/fuse/recover")
-async def recover_fuse(body: FuseRecoverRequest):
+async def recover_fuse(body: FuseRecoverRequest, request: Request):
+    principal = get_request_principal(request)
     logger.warning(
         "risk_fuse_recover_request",
         mode=body.mode,
-        approved_by=body.approved_by,
-        note=body.note,
+        fuse_record_id=body.fuse_record_id,
+        principal_id=principal.principal_id,
     )
     cache = CacheManager()
     async with get_db() as db:
@@ -145,38 +201,73 @@ async def recover_fuse(body: FuseRecoverRequest):
         if not await fuse.is_fused(body.mode):
             logger.info("risk_fuse_recover_noop", mode=body.mode)
             return ok({"mode": body.mode, "is_active": False}, message="当前未熔断")
-        await fuse.recover(body.mode, body.approved_by, body.note)
+    try:
+        async with get_db() as db:
+            approval = await ExecutionAuthorizationService().consume_operation_approval(
+                db,
+                approval_id=body.execution_authorization_id,
+                principal=principal,
+                action_type="risk.fuse.recover",
+                payload={
+                    "mode": body.mode,
+                    "fuse_record_id": body.fuse_record_id,
+                    "note": body.note,
+                },
+            )
+    except ExecutionAuthorizationError as exc:
+        error(exc.message, exc.code, exc.status_code)
+
+    approved_payload = approval["payload"]
+    async with get_db() as db:
+        fuse = FuseManager(db, cache)
+        recovered = await fuse.recover(
+            approved_payload["mode"],
+            approved_payload["fuse_record_id"],
+            approval["approver_principal_id"],
+            approved_payload["note"],
+        )
+    if not recovered:
+        error("熔断记录已变化，需重新发起审批", "FUSE_RECORD_CHANGED", 409)
     logger.info(
         "risk_fuse_recovered",
         mode=body.mode,
-        approved_by=body.approved_by,
+        fuse_record_id=body.fuse_record_id,
+        approved_by=approval["approver_principal_id"],
     )
     return ok({"mode": body.mode, "is_active": False}, message="熔断已解除")
 
 
 @router.get("/alerts")
 async def list_recent_alerts(
-    limit: int = Query(50, ge=1, le=100),
+    limit: int | None = Query(None, ge=1, le=100, description="兼容旧客户端"),
+    page: int = Query(1, ge=1),
+    page_size: int | None = Query(None, ge=1, le=100),
     level: str | None = Query(None, description="INFO/WARNING/ERROR/CRITICAL"),
     alert_type: str | None = Query(None, description="告警类型过滤"),
 ):
-    """最近告警（Redis 历史，进程重启后可能为空）。"""
-    from app.ws.publisher import get_recent_alerts
-
-    items = await get_recent_alerts(limit=limit, level=level, alert_type=alert_type)
-    return ok({"items": items, "total": len(items), "level": level, "type": alert_type})
+    """持久化风险告警，按创建时间和 ID 稳定分页。"""
+    effective_page_size = page_size or limit or 50
+    async with get_db() as db:
+        result = await list_persisted_risk_alerts(
+            db,
+            page=page,
+            page_size=effective_page_size,
+            level=level,
+            alert_type=alert_type,
+        )
+    return ok(result)
 
 
 @router.get("/alerts/summary")
 async def alerts_summary(limit: int = Query(100, ge=1, le=100)):
-    """告警计数汇总（仪表盘用）。"""
-    from app.ws.publisher import summarize_alerts
-
-    return ok(await summarize_alerts(limit=limit))
+    """持久化风险告警计数汇总（仪表盘用）。"""
+    async with get_db() as db:
+        result = await summarize_persisted_risk_alerts(db, limit=limit)
+    return ok(result)
 
 
 @router.post("/pre-check")
-async def pre_check_trade(request: OrderCreateRequest):
+async def pre_check_trade(request: PreTradeCheckRequest):
     """交易前风控检查（供 Worker run_signal_scan 调用）。"""
     logger.info(
         "risk_precheck_start",
@@ -185,23 +276,24 @@ async def pre_check_trade(request: OrderCreateRequest):
         side=request.side,
         quantity=request.quantity,
     )
-    if request.quantity % 100 != 0:
-        error("买入数量必须是100的整数倍", "INVALID_QUANTITY")
-    if request.order_type == "LIMIT" and request.limit_price is None:
-        error("限价单必须提供limit_price", "MISSING_PRICE")
+    dry_run_order = build_dry_run_order_request(request.model_dump(), request.mode)
+    input_result = OrderPreflight.check_input(dry_run_order)
+    if not input_result.allowed:
+        error(
+            input_result.report.checks[0].message,
+            input_result.reason or "ORDER_INPUT_REJECTED",
+        )
 
+    cache = CacheManager()
     async with get_db() as db:
         checker = PreTradeRiskChecker(db, RiskMonitor(db))
-        report = await checker.check(
-            {
-                "stock_code": request.stock_code,
-                "side": request.side,
-                "quantity": request.quantity,
-                "limit_price": request.limit_price,
-                "signal_id": request.signal_id,
-            },
+        preflight = OrderPreflight(checker, FuseManager(db, cache))
+        result = await preflight.check(
+            dry_run_order,
             request.mode,
+            record_risk_events=False,
         )
+        report = result.report
 
     logger.info(
         "risk_precheck_done",
@@ -259,16 +351,13 @@ async def test_dingtalk_notify(
 @router.get("/dashboard")
 async def risk_dashboard(mode: str = Query("simulation")):
     """仪表盘聚合：资产暴露 + 熔断 + 告警摘要。"""
-    from app.ws.publisher import summarize_alerts
-
     cache = CacheManager()
     async with get_db() as db:
         monitor = RiskMonitor(db)
         snap = await monitor.get_portfolio_snapshot(mode)
         fuse = FuseManager(db, cache)
-        is_fused = await fuse.is_fused(mode)
-
-    alerts = await summarize_alerts(100)
+        fuse_state = await fuse.get_state(mode)
+        alerts = await summarize_persisted_risk_alerts(db, limit=100)
     return ok(
         {
             "mode": mode,
@@ -282,11 +371,27 @@ async def risk_dashboard(mode: str = Query("simulation")):
                 "position_count": len(snap["positions"]),
                 "position_ratio": (
                     snap["total_market_value"] / snap["total_assets"]
-                    if snap["total_assets"]
-                    else 0
+                    if snap["total_market_value"] is not None
+                    and snap["total_assets"] is not None
+                    and snap["total_assets"] > 0
+                    else None
                 ),
+                "account_snapshot_time": snap["account_snapshot_time"],
+                "account_snapshot_age_seconds": snap["account_snapshot_age_seconds"],
+                "account_snapshot_freshness": snap["account_snapshot_freshness"],
+                "valuation_status": snap["valuation_status"],
+                "valuation_stale": snap["valuation_stale"],
+                "valuation_freshness": snap["valuation_freshness"],
+                "valuation_as_of": snap["valuation_as_of"],
+                "valuation_age_seconds": snap["valuation_age_seconds"],
+                "valuation_unavailable_positions": snap[
+                    "valuation_unavailable_positions"
+                ],
+                "valuation_source": snap["valuation_source"],
+                "source": snap["source"],
+                "source_version": snap["source_version"],
             },
-            "fuse": {"is_active": is_fused},
+            "fuse": fuse_state,
             "alerts": alerts,
         }
     )

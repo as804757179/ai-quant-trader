@@ -38,3 +38,14 @@ async def get_positions(
     positions = await svc.get_positions(mode)
     logger.debug("portfolio_positions_result", mode=mode, count=len(positions or []))
     return ok(positions)
+
+
+@router.get("/equity-curve")
+async def get_equity_curve(
+    mode: str = Query("simulation"),
+    days: int = Query(30, ge=1, le=365),
+    svc: PortfolioService = Depends(get_portfolio_service),
+):
+    """只读返回账户每日最新资产快照。"""
+    logger.info("portfolio_equity_curve_query", mode=mode, days=days)
+    return ok(await svc.get_equity_curve(mode, days))

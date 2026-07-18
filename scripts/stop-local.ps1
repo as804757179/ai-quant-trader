@@ -41,6 +41,40 @@ function Stop-RegisteredProcess([string]$Name, [object]$Entry) {
     Write-Status "已停止：$Name"
 }
 
+function Clear-RedBeatLock {
+    $envPath = Join-Path $Root ".env.host"
+    if (-not (Test-Path $envPath)) {
+        $failures.Add("无法清理 RedBeat 锁：缺少 .env.host")
+        return
+    }
+    $redisUrl = $null
+    Get-Content $envPath -Encoding UTF8 | ForEach-Object {
+        if ($_.Trim() -match "^REDIS_URL=(.+)$") { $redisUrl = $matches[1].Trim() }
+    }
+    if (-not $redisUrl -or -not (Get-Command redis-cli -ErrorAction SilentlyContinue)) {
+        $failures.Add("无法清理 RedBeat 锁：缺少 Redis 连接或 redis-cli")
+        return
+    }
+    $activeBeat = Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" |
+        Where-Object { $_.CommandLine -match "-m celery -A celery_app beat" }
+    if ($activeBeat) {
+        $failures.Add("检测到仍在运行的 Celery Beat，已拒绝清理 RedBeat 锁")
+        return
+    }
+    try {
+        $redisUri = [Uri]$redisUrl
+    } catch {
+        $failures.Add("无法清理 RedBeat 锁：REDIS_URL 格式无效")
+        return
+    }
+    $result = & redis-cli -h $redisUri.Host -p $redisUri.Port DEL "redbeat::lock"
+    if ($LASTEXITCODE -ne 0) {
+        $failures.Add("清理 RedBeat 锁失败")
+        return
+    }
+    Write-Status "RedBeat 锁已清理：$result" DarkGray
+}
+
 if (-not (Test-Path $RegistryPath)) {
     Remove-Item $WatchdogStatusPath -Force -ErrorAction SilentlyContinue
     Write-Status "没有已登记的本地服务。" DarkGray
@@ -62,6 +96,10 @@ if (-not $registry.root -or [IO.Path]::GetFullPath([string]$registry.root) -ne [
 foreach ($serviceName in @("watchdog", "frontend", "beat", "worker", "backend", "data-service")) {
     $property = $registry.services.PSObject.Properties[$serviceName]
     if ($property) { Stop-RegisteredProcess $serviceName $property.Value }
+}
+
+if ($failures.Count -eq 0 -and $registry.services.PSObject.Properties["beat"]) {
+    Clear-RedBeatLock
 }
 
 if ($failures.Count -eq 0 -and $registry.infrastructure_started -and -not $KeepInfrastructure) {

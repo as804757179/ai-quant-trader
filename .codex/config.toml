@@ -4,3 +4,6 @@ max_depth = 1
 
 [features]
 hooks = true
+
+[mcp_servers.node_repl]
+tool_timeout_sec = 45

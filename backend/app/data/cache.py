@@ -159,7 +159,12 @@ class CacheManager:
             return await client.get(key)
         except Exception as exc:
             self._log_error("get_raw", exc, key=key)
-            return None
+        return None
+
+    async def get_raw_strict(self, key: str) -> str | None:
+        """Read a safety-critical value without converting infrastructure errors to None."""
+        client = await self._get_client()
+        return await client.get(key)
 
     async def set_raw(self, key: str, value: str, ttl: int | None = None) -> None:
         client = await self._get_client()
@@ -171,12 +176,25 @@ class CacheManager:
         except Exception as exc:
             self._log_error("set_raw", exc, key=key)
 
+    async def set_raw_strict(self, key: str, value: str, ttl: int | None = None) -> None:
+        """Write a safety-critical value and propagate infrastructure failures."""
+        client = await self._get_client()
+        if ttl:
+            await client.setex(key, ttl, value)
+        else:
+            await client.set(key, value)
+
     async def delete_raw(self, key: str) -> None:
         client = await self._get_client()
         try:
             await client.delete(key)
         except Exception as exc:
             self._log_error("delete_raw", exc, key=key)
+
+    async def delete_raw_strict(self, key: str) -> None:
+        """Delete a safety-critical value and propagate infrastructure failures."""
+        client = await self._get_client()
+        await client.delete(key)
 
     async def mget(self, keys: list[str]) -> list[Any | None]:
         """批量 get：先 L1，未命中再 Redis MGET。"""

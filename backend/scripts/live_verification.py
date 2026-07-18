@@ -93,8 +93,6 @@ async def maybe_execute(args: argparse.Namespace) -> dict:
         print("拒绝：实盘执行需要 --i-understand-live")
         return {"executed": False, "error": "missing_live_ack"}
 
-    from app.services.trade_service import TradeService
-
     payload = {
         "stock_code": args.code,
         "side": args.side,
@@ -108,8 +106,11 @@ async def maybe_execute(args: argparse.Namespace) -> dict:
         payload["live_confirm"] = settings.LIVE_CONFIRM_TOKEN
 
     print_section("提交订单")
-    svc = TradeService()
-    result = await svc.create_manual_order(payload)
+    result = {
+        "success": False,
+        "error_code": "DIRECT_ORDER_SUBMISSION_DISABLED",
+        "message": "验证脚本不得绕过认证、审批和订单意图边界直接下单",
+    }
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
     if result.get("success") and result.get("order_id") and args.mode != "simulation":

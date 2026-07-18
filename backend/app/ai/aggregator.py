@@ -7,7 +7,7 @@ from typing import Any
 
 import structlog
 
-from app.ai.schemas import AgentResult
+from app.ai.schemas import AgentResult, AgentStatus
 from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
@@ -77,10 +77,27 @@ class SignalAggregator:
             return signal
 
         degraded_agents = self._find_degraded_agents(results)
-        effective_weights = self._adjust_weights_for_degraded(degraded_agents)
-        composite_score = sum(
-            scores[name] * effective_weights[name] for name in scores
-        )
+        if degraded_agents:
+            signal = self._build_signal(
+                stock_code=stock_code,
+                action="HOLD",
+                raw_confidence=0.5,
+                calibrated_confidence=0.0,
+                risk_level=risk_output.get("risk_level", "UNKNOWN"),
+                current_price=current_price,
+                reason=f"关键分析子源不可用或降级: {', '.join(degraded_agents)}，仅返回HOLD",
+                results=results,
+                scores=scores,
+                degraded_agents=degraded_agents,
+            )
+            logger.warning(
+                "aggregation_degraded_hold",
+                stock_code=stock_code,
+                degraded_agents=degraded_agents,
+            )
+            return signal
+
+        composite_score = sum(scores[name] * self.WEIGHTS[name] for name in scores)
 
         if composite_score >= self.buy_threshold:
             action = "BUY"
@@ -207,11 +224,17 @@ class SignalAggregator:
 
     def _find_degraded_agents(self, results: dict[str, Any]) -> list[str]:
         degraded: list[str] = []
-        for name, result in results.items():
-            if name == "risk":
-                continue
+        for name in self.WEIGHTS:
+            result = results.get(name)
             output = self._get_output(result)
-            if output.get("_degraded"):
+            if (
+                result is None
+                or output.get("_degraded")
+                or (
+                    isinstance(result, AgentResult)
+                    and result.status != AgentStatus.SUCCESS
+                )
+            ):
                 degraded.append(name)
         return degraded
 

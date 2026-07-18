@@ -1,0 +1,180 @@
+{
+  "ledger_version": "2026-07-17",
+  "governance_plan": "docs/superpowers/specs/2026-07-16-legacy-api-clearance-and-new-api-entry-gate.md",
+  "original_total_expected": 76,
+  "total_expected": 93,
+  "consumer_registry": {
+    "frontend.core_models": {
+      "source": "frontend/src/presentation/coreModels.ts",
+      "kind": "frontend"
+    },
+    "frontend.news_evidence_review": {
+      "source": "frontend/src/pages/research/NewsEvidenceReviewPage.tsx",
+      "kind": "frontend"
+    },
+    "frontend.app_shell": {
+      "source": "frontend/src/layout/AppShell.tsx",
+      "kind": "frontend"
+    },
+    "worker.backend_http": {
+      "source": "worker/services/backend_client.py",
+      "kind": "worker"
+    },
+    "worker.ai_tasks": {
+      "source": "worker/tasks/ai.py",
+      "kind": "worker"
+    },
+    "backend.data_client": {
+      "source": "backend/app/data/client.py",
+      "kind": "backend"
+    },
+    "worker.data_client": {
+      "source": "worker/services/data_client.py",
+      "kind": "worker"
+    },
+    "runtime.healthcheck": {
+      "source": "docker-compose.yml and scripts/start-local.ps1",
+      "kind": "runtime"
+    },
+    "research.verification_scripts": {
+      "source": "scripts/verify_research_*.ps1",
+      "kind": "script"
+    }
+  },
+  "scopes": {
+    "main_http": {
+      "system": "backend",
+      "transport": "http",
+      "expected_count": 77,
+      "interfaces": [
+        {"id": "backend.stock.market-status.get", "method": "GET", "path": "/api/v1/stock/market/status", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
+        {"id": "backend.stock.market-batches.get", "method": "GET", "path": "/api/v1/stock/market/batches", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
+        {"id": "backend.stock.sync-universe.post", "method": "POST", "path": "/api/v1/stock/sync-universe", "owner": "market_data", "risk_level": "admin", "disposition": "async_job", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_worker_runtime_contract", "review_resolution": "retain_worker_runtime_verified"},
+        {"id": "backend.stock.list.get", "method": "GET", "path": "/api/v1/stock/list", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_contract", "review_resolution": "retain_runtime_verified"},
+        {"id": "backend.stock.backfill-kline.post", "method": "POST", "path": "/api/v1/stock/backfill-kline", "owner": "market_data", "risk_level": "admin", "disposition": "async_job", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_worker_runtime_contract", "review_resolution": "retain_worker_runtime_verified"},
+        {"id": "backend.stock.profile.get", "method": "GET", "path": "/api/v1/stock/{code}/profile", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_contract"},
+        {"id": "backend.stock.quote.get", "method": "GET", "path": "/api/v1/stock/{code}/quote", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_contract", "review_resolution": "retain_runtime_verified"},
+        {"id": "backend.stock.kline.get", "method": "GET", "path": "/api/v1/stock/{code}/kline", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_contract", "review_resolution": "retain_runtime_verified"},
+        {"id": "backend.stock.fund-flow.get", "method": "GET", "path": "/api/v1/stock/{code}/fund-flow", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_safe_no_data_contract", "review_resolution": "retain_runtime_verified"},
+        {"id": "backend.stock.news.get", "method": "GET", "path": "/api/v1/stock/{code}/news", "owner": "market_data", "risk_level": "read", "disposition": "split", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_safe_no_data_contract", "review_resolution": "retain_announcement_compatibility"},
+
+        {"id": "backend.ai.signals.get", "method": "GET", "path": "/api/v1/ai/signals", "owner": "ai", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
+        {"id": "backend.ai.audit-summary.get", "method": "GET", "path": "/api/v1/ai/audit-summary", "owner": "ai", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_runtime_contract"},
+        {"id": "backend.ai.analyze.post", "method": "POST", "path": "/api/v1/ai/{code}/analyze", "owner": "ai", "risk_level": "write", "disposition": "async_job", "lifecycle": "active", "consumer_state": "known", "consumers": ["worker.backend_http", "worker.ai_tasks"], "known_issues": [], "verification": "route_and_worker_runtime_contract"},
+        {"id": "backend.ai.latest-signal.get", "method": "GET", "path": "/api/v1/ai/{code}/latest-signal", "owner": "ai", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_context_contract", "review_resolution": "retain_runtime_verified"},
+        {"id": "backend.ai.signal-history.get", "method": "GET", "path": "/api/v1/ai/{code}/signal-history", "owner": "ai", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_context_contract", "review_resolution": "retain_runtime_verified"},
+
+        {"id": "backend.screener.screen.post", "method": "POST", "path": "/api/v1/screener/screen", "owner": "screener", "risk_level": "compute", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_release_contract", "review_resolution": "retain_release_blocked"},
+        {"id": "backend.screener.presets.get", "method": "GET", "path": "/api/v1/screener/presets", "owner": "screener", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_authorization_contract", "review_resolution": "retain_runtime_verified"},
+        {"id": "backend.screener.theme.post", "method": "POST", "path": "/api/v1/screener/theme", "owner": "screener", "risk_level": "compute", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_release_contract", "review_resolution": "retain_release_blocked"},
+
+        {"id": "backend.strategy.list.get", "method": "GET", "path": "/api/v1/strategy/list", "owner": "strategy", "risk_level": "read", "disposition": "compatibility", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_governed_config_contract", "review_resolution": "retain_compatibility"},
+        {"id": "backend.strategy.runtime-status.get", "method": "GET", "path": "/api/v1/strategy/runtime-status", "owner": "strategy", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
+        {"id": "backend.strategy.detail.get", "method": "GET", "path": "/api/v1/strategy/{strategy_type}", "owner": "strategy", "risk_level": "read", "disposition": "compatibility", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_governed_config_contract", "review_resolution": "retain_compatibility"},
+        {"id": "backend.strategy.create.post", "method": "POST", "path": "/api/v1/strategy/create", "owner": "strategy", "risk_level": "admin", "disposition": "legacy_clearance_governance", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_authorization_contract", "review_resolution": "retain_pending_approval_submission", "introduced_for": "legacy_clearance", "authorization": "strategy:write + expected_revision"},
+        {"id": "backend.strategy.update.post", "method": "POST", "path": "/api/v1/strategy/{strategy_type}/update", "owner": "strategy", "risk_level": "admin", "disposition": "legacy_clearance_governance", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_authorization_contract", "review_resolution": "retain_pending_approval_submission", "introduced_for": "legacy_clearance", "authorization": "strategy:write + expected_revision"},
+        {"id": "backend.strategy.version-approve.post", "method": "POST", "path": "/api/v1/strategy/versions/{version_id}/approve", "owner": "strategy", "risk_level": "admin", "disposition": "legacy_clearance_governance", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_authorization_contract", "introduced_for": "legacy_clearance", "replaces": ["direct strategy activation"], "authorization": "strategy:approve"},
+
+        {"id": "backend.backtest.run.post", "method": "POST", "path": "/api/v1/backtest/run", "owner": "backtest", "risk_level": "write", "disposition": "async_job", "lifecycle": "active", "consumer_state": "known", "consumers": ["worker.ai_tasks"], "known_issues": [], "verification": "route_and_runtime_contract"},
+        {"id": "backend.backtest.job.get", "method": "GET", "path": "/api/v1/backtest/jobs/{job_id}", "owner": "backtest", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_authorization_contract"},
+        {"id": "backend.backtest.job-result.get", "method": "GET", "path": "/api/v1/backtest/jobs/{job_id}/result", "owner": "backtest", "risk_level": "read", "disposition": "split", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_authorization_contract"},
+        {"id": "backend.backtest.job-cancel.post", "method": "POST", "path": "/api/v1/backtest/jobs/{job_id}/cancel", "owner": "backtest", "risk_level": "write", "disposition": "async_job", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_authorization_contract"},
+        {"id": "backend.backtest.job-execute.post", "method": "POST", "path": "/api/v1/backtest/jobs/{job_id}/execute", "owner": "backtest", "risk_level": "admin", "disposition": "admin", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_authorization_contract"},
+        {"id": "backend.backtest.tasks.get", "method": "GET", "path": "/api/v1/backtest/tasks", "owner": "backtest", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
+        {"id": "backend.backtest.validation-summary.get", "method": "GET", "path": "/api/v1/backtest/validation-summary", "owner": "backtest", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_runtime_contract"},
+        {"id": "backend.backtest.status.get", "method": "GET", "path": "/api/v1/backtest/{task_id}/status", "owner": "backtest", "risk_level": "read", "disposition": "split", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_error_contract"},
+
+        {"id": "backend.jobs.status.get", "method": "GET", "path": "/api/v1/jobs/{job_id}", "owner": "platform", "risk_level": "read", "disposition": "legacy_clearance_governance", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_authorization_contract", "introduced_for": "legacy_clearance", "replaces": ["inline long-operation HTTP response"]},
+        {"id": "backend.jobs.result.get", "method": "GET", "path": "/api/v1/jobs/{job_id}/result", "owner": "platform", "risk_level": "read", "disposition": "legacy_clearance_governance", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_authorization_contract", "introduced_for": "legacy_clearance", "replaces": ["inline long-operation HTTP response"]},
+        {"id": "backend.jobs.cancel.post", "method": "POST", "path": "/api/v1/jobs/{job_id}/cancel", "owner": "platform", "risk_level": "write", "disposition": "legacy_clearance_governance", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_authorization_contract", "introduced_for": "legacy_clearance", "replaces": ["inline long-operation HTTP response"]},
+        {"id": "backend.jobs.execute.post", "method": "POST", "path": "/api/v1/jobs/{job_id}/execute", "owner": "platform", "risk_level": "admin", "disposition": "legacy_clearance_governance", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_authorization_contract", "introduced_for": "legacy_clearance", "replaces": ["inline long-operation HTTP response"], "authorization": "jobs:execute + service_worker"},
+
+        {"id": "backend.risk.rules.get", "method": "GET", "path": "/api/v1/risk/rules", "owner": "risk", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_snapshot_contract", "review_resolution": "retain_runtime_verified"},
+        {"id": "backend.risk.fuse-status.get", "method": "GET", "path": "/api/v1/risk/fuse-status", "owner": "risk", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_fail_closed_contract", "review_resolution": "retain_runtime_verified"},
+        {"id": "backend.risk.exposure.get", "method": "GET", "path": "/api/v1/risk/exposure", "owner": "risk", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
+        {"id": "backend.risk.fuse-activate.post", "method": "POST", "path": "/api/v1/risk/fuse/activate", "owner": "risk", "risk_level": "admin", "disposition": "admin", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_operational_contract", "review_resolution": "retain_simulation_control"},
+        {"id": "backend.risk.fuse-recover.post", "method": "POST", "path": "/api/v1/risk/fuse/recover", "owner": "risk", "risk_level": "admin", "disposition": "admin", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_independent_approval_contract", "review_resolution": "retain_simulation_control"},
+        {"id": "backend.risk.alerts.get", "method": "GET", "path": "/api/v1/risk/alerts", "owner": "risk", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
+        {"id": "backend.risk.alerts-summary.get", "method": "GET", "path": "/api/v1/risk/alerts/summary", "owner": "risk", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_contract"},
+        {"id": "backend.risk.pre-check.post", "method": "POST", "path": "/api/v1/risk/pre-check", "owner": "risk", "risk_level": "compute", "disposition": "compatibility", "lifecycle": "active", "consumer_state": "known", "consumers": ["worker.backend_http"], "known_issues": [], "verification": "route_and_worker_contract"},
+        {"id": "backend.risk.alerts-test-dingtalk.post", "method": "POST", "path": "/api/v1/risk/alerts/test-dingtalk", "owner": "risk", "risk_level": "admin", "disposition": "admin", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_safe_failure_contract", "review_resolution": "retain_admin_utility"},
+        {"id": "backend.risk.dashboard.get", "method": "GET", "path": "/api/v1/risk/dashboard", "owner": "risk", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
+
+        {"id": "backend.trade.order.post", "method": "POST", "path": "/api/v1/trade/order", "owner": "trade", "risk_level": "write", "disposition": "admin", "lifecycle": "active", "consumer_state": "known", "consumers": ["worker.backend_http"], "known_issues": [], "verification": "route_and_worker_contract"},
+        {"id": "backend.trade.approval-request.post", "method": "POST", "path": "/api/v1/trade/approvals", "owner": "trade", "risk_level": "write", "disposition": "legacy_clearance_governance", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_contract"},
+        {"id": "backend.trade.approval-approve.post", "method": "POST", "path": "/api/v1/trade/approvals/{approval_id}/approve", "owner": "trade", "risk_level": "admin", "disposition": "legacy_clearance_governance", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_contract"},
+        {"id": "backend.trade.simulation-release-t1.post", "method": "POST", "path": "/api/v1/trade/simulation/release-t1", "owner": "trade", "risk_level": "admin", "disposition": "compatibility", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_approval_contract", "review_resolution": "retain_compatibility"},
+        {"id": "backend.trade.cancel.post", "method": "POST", "path": "/api/v1/trade/order/cancel", "owner": "trade", "risk_level": "write", "disposition": "admin", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_uuid_and_approval_contract", "review_resolution": "retain_safe_rejection_contract"},
+        {"id": "backend.trade.orders.get", "method": "GET", "path": "/api/v1/trade/orders", "owner": "trade", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
+        {"id": "backend.trade.order-detail.get", "method": "GET", "path": "/api/v1/trade/orders/{order_id}", "owner": "trade", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_error_contract", "review_resolution": "retain_runtime_verified"},
+        {"id": "backend.trade.orders-sync.post", "method": "POST", "path": "/api/v1/trade/orders/sync", "owner": "trade", "risk_level": "admin", "disposition": "async_job", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_worker_runtime_contract", "review_resolution": "retain_paper_broker_sync"},
+        {"id": "backend.trade.order-sync.post", "method": "POST", "path": "/api/v1/trade/orders/{order_id}/sync", "owner": "trade", "risk_level": "admin", "disposition": "admin", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_safe_simulation_contract", "review_resolution": "retain_runtime_verified"},
+        {"id": "backend.trade.mode.get", "method": "GET", "path": "/api/v1/trade/mode", "owner": "trade", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
+        {"id": "backend.trade.broker-status.get", "method": "GET", "path": "/api/v1/trade/broker-status", "owner": "trade", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
+        {"id": "backend.trade.execution-status.get", "method": "GET", "path": "/api/v1/trade/execution-status", "owner": "trade", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models", "frontend.app_shell"], "known_issues": [], "verification": "route_and_frontend_contract"},
+        {"id": "backend.trade.reconcile.post", "method": "POST", "path": "/api/v1/trade/reconcile", "owner": "trade", "risk_level": "admin", "disposition": "async_job", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_worker_independent_approval_contract", "review_resolution": "retain_paper_reconciliation"},
+
+        {"id": "backend.portfolio.summary.get", "method": "GET", "path": "/api/v1/portfolio/summary", "owner": "portfolio", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
+        {"id": "backend.portfolio.positions.get", "method": "GET", "path": "/api/v1/portfolio/positions", "owner": "portfolio", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_contract"},
+        {"id": "backend.portfolio.equity-curve.get", "method": "GET", "path": "/api/v1/portfolio/equity-curve", "owner": "portfolio", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
+
+        {"id": "backend.research.source-usage-evidence.get", "method": "GET", "path": "/api/v1/research/source-usage-evidence", "owner": "research", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["research.verification_scripts"], "known_issues": [], "verification": "route_and_script_contract"},
+        {"id": "backend.research.readiness.get", "method": "GET", "path": "/api/v1/research/readiness", "owner": "research", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models", "research.verification_scripts"], "known_issues": [], "verification": "route_and_runtime_contract"},
+        {"id": "backend.research.evidence.get", "method": "GET", "path": "/api/v1/research/evidence", "owner": "research", "risk_level": "read", "disposition": "split", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.news_evidence_review", "research.verification_scripts"], "known_issues": [], "verification": "route_and_detail_runtime_contract"},
+        {"id": "backend.research.evidence-detail.get", "method": "GET", "path": "/api/v1/research/evidence/{evidence_id}", "owner": "research", "risk_level": "read", "disposition": "split", "lifecycle": "active", "consumer_state": "known", "consumers": ["research.verification_scripts"], "known_issues": [], "verification": "route_and_detail_runtime_contract"},
+        {"id": "backend.research.readiness-audit.get", "method": "GET", "path": "/api/v1/research/evidence/readiness-audit", "owner": "research", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["research.verification_scripts"], "known_issues": [], "verification": "route_and_script_contract"},
+        {"id": "backend.research.evidence-batches.get", "method": "GET", "path": "/api/v1/research/evidence/batches", "owner": "research", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["research.verification_scripts"], "known_issues": [], "verification": "route_and_script_contract"},
+        {"id": "backend.research.reviews.get", "method": "GET", "path": "/api/v1/research/evidence/{evidence_id}/reviews", "owner": "research", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.news_evidence_review"], "known_issues": [], "verification": "route_and_frontend_contract"},
+        {"id": "backend.research.reviews.post", "method": "POST", "path": "/api/v1/research/evidence/{evidence_id}/reviews", "owner": "research", "risk_level": "write", "disposition": "admin", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.news_evidence_review"], "known_issues": [], "verification": "route_and_frontend_contract"},
+        {"id": "backend.research.candidate-status.get", "method": "GET", "path": "/api/v1/research/candidate-status", "owner": "research", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
+
+        {"id": "backend.auth.session.post", "method": "POST", "path": "/api/v1/auth/session", "owner": "platform", "risk_level": "identity", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "auth_session_contract", "introduced_for": "legacy_clearance", "replaces": ["browser VITE_API_KEY"], "authorization": "credential_required"},
+        {"id": "backend.auth.me.get", "method": "GET", "path": "/api/v1/auth/me", "owner": "platform", "risk_level": "identity", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "auth_session_contract", "introduced_for": "legacy_clearance", "replaces": ["browser VITE_API_KEY"], "authorization": "authenticated_principal"},
+        {"id": "backend.auth.session.delete", "method": "DELETE", "path": "/api/v1/auth/session", "owner": "platform", "risk_level": "identity", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "auth_session_contract", "introduced_for": "legacy_clearance", "replaces": ["browser VITE_API_KEY"], "authorization": "session_and_csrf_required"},
+        {"id": "backend.system.health.get", "method": "GET", "path": "/api/v1/health", "owner": "platform", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models", "runtime.healthcheck"], "known_issues": [], "verification": "route_and_frontend_contract"},
+        {"id": "backend.system.readiness.get", "method": "GET", "path": "/api/v1/readiness", "owner": "platform", "risk_level": "admin", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "readiness_auth_contract", "introduced_for": "legacy_clearance", "replaces": ["database_check_in_public_health"], "authorization": "system:readiness.read"},
+        {"id": "backend.system.metrics.get", "method": "GET", "path": "/metrics", "owner": "platform", "risk_level": "admin", "disposition": "admin", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_authorization_contract"}
+      ]
+    },
+    "main_websocket": {
+      "system": "backend",
+      "transport": "websocket",
+      "expected_count": 4,
+      "interfaces": [
+        {"id": "backend.ws.quotes", "method": "WEBSOCKET", "path": "/ws/quotes/{stock_code}", "owner": "market_data", "risk_level": "stream", "disposition": "compatibility", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_session_contract", "review_resolution": "retain_compatibility"},
+        {"id": "backend.ws.signals", "method": "WEBSOCKET", "path": "/ws/signals", "owner": "ai", "risk_level": "stream", "disposition": "compatibility", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_session_contract", "review_resolution": "retain_compatibility"},
+        {"id": "backend.ws.alerts", "method": "WEBSOCKET", "path": "/ws/alerts", "owner": "risk", "risk_level": "stream", "disposition": "compatibility", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_session_contract", "review_resolution": "retain_compatibility"},
+        {"id": "backend.ws.portfolio", "method": "WEBSOCKET", "path": "/ws/portfolio", "owner": "portfolio", "risk_level": "stream", "disposition": "compatibility", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_session_contract", "review_resolution": "retain_compatibility"}
+      ]
+    },
+    "internal_data_http": {
+      "system": "a-stock-data",
+      "transport": "http",
+      "expected_count": 12,
+      "interfaces": [
+        {"id": "data.health.get", "method": "GET", "path": "/health", "owner": "data_service", "risk_level": "internal", "disposition": "internal", "lifecycle": "active", "consumer_state": "known", "consumers": ["runtime.healthcheck"], "known_issues": [], "verification": "route_and_openapi"},
+        {"id": "data.stock-list.get", "method": "GET", "path": "/stock/list", "owner": "data_service", "risk_level": "internal", "disposition": "internal", "lifecycle": "active", "consumer_state": "known", "consumers": ["backend.data_client"], "known_issues": [], "verification": "route_and_openapi"},
+        {"id": "data.stock-list.refresh.post", "method": "POST", "path": "/internal/stock-list/refresh", "owner": "data_service", "risk_level": "internal", "disposition": "internal_command", "lifecycle": "active", "consumer_state": "known", "consumers": ["backend.data_client"], "known_issues": [], "verification": "route_and_job_contract"},
+        {"id": "data.quote.get", "method": "GET", "path": "/quote/{code}", "owner": "data_service", "risk_level": "internal", "disposition": "internal", "lifecycle": "active", "consumer_state": "known", "consumers": ["backend.data_client", "worker.data_client"], "known_issues": [], "verification": "route_and_consumer_contract"},
+        {"id": "data.quotes.get", "method": "GET", "path": "/quotes", "owner": "data_service", "risk_level": "internal", "disposition": "internal", "lifecycle": "active", "consumer_state": "known", "consumers": ["backend.data_client", "worker.data_client"], "known_issues": [], "verification": "route_and_runtime_contract"},
+        {"id": "data.kline.get", "method": "GET", "path": "/kline/{code}", "owner": "data_service", "risk_level": "internal", "disposition": "internal", "lifecycle": "active", "consumer_state": "known", "consumers": ["backend.data_client", "worker.data_client"], "known_issues": [], "verification": "route_and_runtime_contract"},
+        {"id": "data.fund-flow.get", "method": "GET", "path": "/fund-flow/{code}", "owner": "data_service", "risk_level": "internal", "disposition": "internal", "lifecycle": "active", "consumer_state": "known", "consumers": ["backend.data_client", "worker.data_client"], "known_issues": [], "verification": "route_and_consumer_contract"},
+        {"id": "data.announcements.get", "method": "GET", "path": "/announcements/{code}", "owner": "data_service", "risk_level": "internal", "disposition": "internal", "lifecycle": "active", "consumer_state": "known", "consumers": ["worker.data_client"], "known_issues": [], "verification": "route_and_runtime_error_contract"},
+        {"id": "data.financial-reports.get", "method": "GET", "path": "/financial-reports/{code}", "owner": "data_service", "risk_level": "internal", "disposition": "internal", "lifecycle": "active", "consumer_state": "known", "consumers": ["worker.data_client"], "known_issues": [], "verification": "route_and_runtime_error_contract"},
+        {"id": "data.news.get", "method": "GET", "path": "/news/{code}", "owner": "data_service", "risk_level": "internal", "disposition": "internal_compatibility", "lifecycle": "active", "consumer_state": "known", "consumers": ["backend.data_client"], "known_issues": [], "verification": "route_and_runtime_contract"},
+        {"id": "data.news-evidence.get", "method": "GET", "path": "/news-evidence/{code}", "owner": "data_service", "risk_level": "internal", "disposition": "internal", "lifecycle": "active", "consumer_state": "known", "consumers": ["worker.data_client"], "known_issues": [], "verification": "route_and_runtime_error_contract"},
+        {"id": "data.financial.get", "method": "GET", "path": "/financial/{code}", "owner": "data_service", "risk_level": "internal", "disposition": "internal_compatibility", "lifecycle": "active", "consumer_state": "known", "consumers": ["backend.data_client"], "known_issues": [], "verification": "route_and_runtime_contract"}
+      ]
+    }
+  },
+  "openapi_baselines": {
+    "main_http": {
+      "path_count": 75,
+      "sha256": "e290e53e4969366f33a6e138b1c3112a3831accf55e302794f72396d719b1267"
+    },
+    "internal_data_http": {
+      "path_count": 12,
+      "sha256": "49b917d6198e058535903aafe2be176a6016844ec3249a1020d009e251d30a99"
+    }
+  }
+}

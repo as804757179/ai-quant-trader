@@ -33,7 +33,7 @@ export interface ReleaseLock {
     | "AI_ORDER_ENABLED"
     | "ALLOW_SCHEDULED_ORDER";
   label: string;
-  enabled: false;
+  enabled: boolean;
   reason: string;
 }
 

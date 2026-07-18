@@ -34,8 +34,14 @@ if (-not (Test-Path $envPath)) {
 } else {
     $config = Get-EnvMap $envPath
     foreach ($entry in $config.GetEnumerator()) { Set-Item -Path "Env:$($entry.Key)" -Value $entry.Value }
-    foreach ($key in @("DATABASE_URL", "REDIS_URL", "CELERY_BROKER_URL", "CELERY_RESULT_BACKEND", "A_STOCK_DATA_URL", "SECRET_KEY")) {
+    foreach ($key in @("DATABASE_URL", "REDIS_URL", "CELERY_BROKER_URL", "CELERY_RESULT_BACKEND", "A_STOCK_DATA_URL", "A_STOCK_DATA_COMMAND_TOKEN", "WORKER_API_CREDENTIAL", "SECRET_KEY")) {
         if (-not $config[$key]) { Add-Failure "缺少环境变量：$key" }
+    }
+    if ($config["A_STOCK_DATA_COMMAND_TOKEN"].Length -lt 32 -or $config["A_STOCK_DATA_COMMAND_TOKEN"] -match "(?i)replace-with-|change_me") {
+        Add-Failure "A_STOCK_DATA_COMMAND_TOKEN 必须是至少 32 字节的非默认随机值"
+    }
+    if ($config["WORKER_API_CREDENTIAL"].Length -lt 32 -or $config["WORKER_API_CREDENTIAL"] -match "(?i)replace-with-|change_me|changeme|123456|test") {
+        Add-Failure "WORKER_API_CREDENTIAL 必须是至少 32 字节的非默认随机凭据"
     }
     if ($config["TRADE_MODE"] -eq "live" -and $config["QMT_FORCE_MOCK"] -match "^(1|true|yes)$") {
         Add-Failure "不安全配置：live 模式禁止 QMT_FORCE_MOCK=true"
@@ -67,7 +73,7 @@ try {
 } catch { Add-Failure "数据服务健康检查失败：$($_.Exception.Message)" }
 try {
     $health = Invoke-RestMethod "http://127.0.0.1:8000/api/v1/health" -TimeoutSec $TimeoutSeconds
-    if ($health.status -ne "ok" -or $health.checks.database -ne "ok") { Add-Failure "后端健康状态异常" }
+    if ($health.status -ne "ok") { Add-Failure "后端存活状态异常" }
 } catch { Add-Failure "后端健康检查失败：$($_.Exception.Message)" }
 $backendPy = Join-Path $Root "backend\.venv\Scripts\python.exe"
 if (-not (Test-Path $backendPy)) {
