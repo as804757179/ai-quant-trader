@@ -210,6 +210,22 @@ export interface SystemHealthData {
   source_version?: string;
 }
 
+export interface SystemAlertListData {
+  items?: Array<{ category?: string; alert_id?: string; severity?: string; alert_type?: string; owner?: string; event_time?: string | null; related_id?: string; detail_code?: string | null; source?: string; source_version?: string }>;
+  total?: number;
+  page?: number;
+  page_size?: number;
+  has_more?: boolean;
+  summary?: { system_operation?: number; data_qualification?: number; latest_event_at?: string | null };
+  business_release?: { status?: string; release_locks?: ReleaseLock[]; all_release_locks_closed?: boolean };
+  risk_alerts_included?: boolean;
+  research_readiness?: string;
+  tradable?: boolean;
+  order_created?: boolean;
+  source?: string;
+  source_version?: string;
+}
+
 export interface RiskExposureData extends PortfolioSnapshot {
   mode?: string;
   positions?: Array<{
@@ -963,6 +979,10 @@ export function useObservedLiquidity(page = 1, pageSize = 50) {
 
 export function useSystemHealth() {
   return useReadOnlyDisplay<SystemHealthData>(() => get<SystemHealthData>("/system/health"), "system-health-v1");
+}
+
+export function useSystemAlerts(page = 1, pageSize = 50) {
+  return useReadOnlyDisplay<SystemAlertListData>(() => get<SystemAlertListData>("/system/alerts", { page, page_size: pageSize }), `system-alerts-v1:p${page}:s${pageSize}`);
 }
 
 export function useExecutionStatus() {

@@ -710,7 +710,7 @@ def route_access(method: str, path: str) -> RouteAccess:
         return RouteAccess()
     if method in {"GET", "HEAD"} and path == "/api/v1/readiness":
         return RouteAccess(scope="system:readiness.read", csrf_required=False)
-    if method in {"GET", "HEAD"} and path == "/api/v1/system/health":
+    if method in {"GET", "HEAD"} and path in {"/api/v1/system/health", "/api/v1/system/alerts"}:
         return RouteAccess(scope="system:metrics.read", csrf_required=False)
     if method in {"GET", "HEAD"} and path == "/metrics":
         return RouteAccess(scope="system:metrics.read", csrf_required=False)

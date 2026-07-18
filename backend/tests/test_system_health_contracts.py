@@ -22,14 +22,19 @@ class _Result:
     def one(self):
         return self.row
 
+    def all(self):
+        return self.row if isinstance(self.row, list) else []
+
 
 class _Db:
     def __init__(self, *results):
         self.results = list(results)
         self.sql = []
+        self.params = []
 
     async def execute(self, statement, _params=None):
         self.sql.append(str(statement))
+        self.params.append(_params or {})
         return self.results.pop(0)
 
 
@@ -71,7 +76,7 @@ class SystemHealthContractTests(unittest.TestCase):
         self.assertIn("market.research_readiness_reviews", db.sql[1])
         self.assertFalse(
             any(
-                operation in statement.upper()
+                f"{operation} " in statement.upper()
                 for statement in db.sql
                 for operation in ("INSERT", "UPDATE", "DELETE")
             )
@@ -92,6 +97,57 @@ class SystemHealthContractTests(unittest.TestCase):
         route = next(item for item in system.router.routes if item.path == "/health")
         self.assertEqual(route.methods, {"GET"})
         self.assertEqual(route_access("GET", "/api/v1/system/health").scope, "system:metrics.read")
+
+    def test_system_alerts_keep_risk_events_out_and_use_server_pagination(self):
+        db = _Db(
+            _Result(
+                {
+                    "total": 2,
+                    "system_operation": 1,
+                    "data_qualification": 1,
+                    "latest_event_at": datetime(2026, 7, 18, tzinfo=timezone.utc),
+                }
+            ),
+            _Result(
+                [
+                    {
+                        "category": "data_qualification",
+                        "alert_id": "data-blocker:review-1",
+                        "severity": "warning",
+                        "alert_type": "data_blocker:unresolved",
+                        "source": "market.data_blocker_reviews",
+                    }
+                ]
+            ),
+        )
+        with patch("app.api.system.get_db", return_value=_DbContext(db)):
+            response = asyncio.run(
+                system.list_system_alerts(category="data_qualification", page=2, page_size=1)
+            )
+
+        payload = response.data
+        self.assertEqual(payload["total"], 2)
+        self.assertEqual(payload["summary"]["data_qualification"], 1)
+        self.assertFalse(payload["risk_alerts_included"])
+        self.assertFalse(payload["tradable"])
+        self.assertEqual(payload["items"][0]["category"], "data_qualification")
+        self.assertEqual(db.params[0]["category"], "data_qualification")
+        self.assertIn("audit.async_jobs", db.sql[0])
+        self.assertIn("market.research_date_reviews", db.sql[1])
+        self.assertNotIn("risk.risk_events", db.sql[1])
+        self.assertIn("ORDER BY event_time DESC NULLS LAST, alert_id DESC", db.sql[1])
+        self.assertFalse(
+            any(
+                f"{operation} " in statement.upper()
+                for statement in db.sql
+                for operation in ("INSERT", "UPDATE", "DELETE")
+            )
+        )
+
+    def test_system_alerts_route_requires_metrics_scope(self):
+        route = next(item for item in system.router.routes if item.path == "/alerts")
+        self.assertEqual(route.methods, {"GET"})
+        self.assertEqual(route_access("GET", "/api/v1/system/alerts").scope, "system:metrics.read")
 
 
 if __name__ == "__main__":

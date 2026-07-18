@@ -1,6 +1,8 @@
 import type { TableProps } from "antd";
-import { type SystemHealthData, useSystemHealth } from "../../presentation/coreModels";
+import { useState } from "react";
+import { type SystemAlertListData, type SystemHealthData, useSystemAlerts, useSystemHealth } from "../../presentation/coreModels";
 import { pendingState } from "../../presentation/readOnlyApi";
+import { formatChinaDateTime } from "../../presentation/time";
 import SectionPage from "../shared/SectionPage";
 
 interface SystemRow { key: string; primary: string; eventTime: string; owner: string; version: string; relatedId: string; status: string; }
@@ -15,8 +17,11 @@ export function SchedulePage() {
 }
 
 export function SystemAlertsPage() {
-  const state = pendingState("系统告警接口待接入", "system-alerts-ui-v1");
-  return <SectionPage title="系统告警" subtitle="基础设施、数据资格和业务发布三类告警的独立归档" relatedId="system:alerts" provenance={state.provenance} metrics={[{ label: "基础设施告警", value: "待接入", detail: "服务、网络、队列与数据库", tone: "review" }, { label: "数据资格告警", value: "待接入", detail: "认证、Readiness 与时效", tone: "review" }, { label: "发布状态告警", value: "关闭", detail: "发布锁不可被告警页解除", tone: "idle" }, { label: "风险事件", value: "独立页面", detail: "不与系统告警混淆", tone: "info" }]} tableTitle="系统告警事件" columns={systemColumns} rowKey="key" emptyDescription={state.message} auditTitle="告警职责" auditItems={[{ label: "基础设施", value: "独立", detail: "健康与连接失败进入系统告警", tone: "info" }, { label: "数据资格", value: "独立", detail: "数据认证与 Readiness 问题明确标识", tone: "info" }, { label: "业务发布", value: "独立", detail: "发布锁状态不等同服务正常", tone: "info" }]} note="告警页不使用单一“正常”掩盖不同状态；基础设施可用、数据可研究和业务已发布必须分别判断。" />;
+  const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(50); const state = useSystemAlerts(page, pageSize); const alerts = state.data; const total = alerts?.total;
+  const known = (state.kind === "live" || state.kind === "empty") && typeof total === "number";
+  const categoryLabel = (value?: string) => ({ system_operation: "系统运行", data_qualification: "数据资格" }[value ?? ""] ?? "类别未记录");
+  const rows: SystemRow[] = (alerts?.items ?? []).map((item: NonNullable<SystemAlertListData["items"]>[number], index) => ({ key: item.alert_id ?? String(index), primary: item.alert_type ?? "未记录", eventTime: formatChinaDateTime(item.event_time ?? undefined), owner: item.owner ?? "未记录", version: item.source_version ?? "未记录", relatedId: item.related_id ?? "未记录", status: `${categoryLabel(item.category)} · ${item.severity ?? "未记录"} · ${item.detail_code ?? "详情未记录"}` }));
+  return <SectionPage title="系统告警" subtitle="系统运行、数据资格与业务发布状态的独立展示" relatedId="system:alerts" provenance={{ ...state.provenance, sourceVersion: alerts?.source_version ?? state.provenance.sourceVersion }} metadataStatusText="只读聚合 · 风险事件不纳入本接口 · 发布锁不在此页面变更" statusLabel={known ? "已接入（只读）" : state.message} statusTone={known ? "info" : "review"} metrics={[{ label: "系统运行记录", value: known ? alerts?.summary?.system_operation ?? 0 : "状态未知", detail: "仅 audit.async_jobs 中 failed/blocked 记录", tone: "review" }, { label: "数据资格阻断", value: known ? alerts?.summary?.data_qualification ?? 0 : "状态未知", detail: "仅既有数据阻断审核记录；不传播为 Readiness", tone: "review" }, { label: "业务发布", value: "未授予", detail: alerts?.business_release?.all_release_locks_closed ? "六把发布锁均关闭" : "存在开启的发布锁；仍不构成授权", tone: "reject" }, { label: "风险事件", value: "独立页面", detail: "本接口不读取 risk.risk_events", tone: "info" }]} tableTitle="系统告警记录（服务端分页）" columns={systemColumns} tableData={rows} tablePagination={known ? { current: alerts?.page ?? page, pageSize: alerts?.page_size ?? pageSize, total, onChange: (nextPage, nextPageSize) => { setPage(nextPageSize === pageSize ? nextPage : 1); setPageSize(nextPageSize); } } : undefined} tableSearchEnabled={false} rowKey="key" emptyDescription={state.message} auditTitle="告警职责" auditItems={[{ label: "系统运行", value: "独立", detail: "仅运行记录失败或阻断进入本页", tone: "info" }, { label: "数据资格", value: "独立", detail: "阻断记录不等于 Research Readiness 结论", tone: "info" }, { label: "发布锁", value: "只读", detail: "当前状态单独展示，不能由本页解除", tone: "reject" }, { label: "风险事件", value: "排除", detail: "风险命中继续在风险页面归档", tone: "info" }]} note="本页不以单一“正常”掩盖不同类别；空列表仅表示当前查询未返回记录，不表示基础设施、数据资格、发布或交易已通过。" />;
 }
 
 export function SystemHealthPage() {
