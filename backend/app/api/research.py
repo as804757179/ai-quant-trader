@@ -1105,6 +1105,93 @@ async def list_financial_location_candidates(
     )
 
 
+@router.get("/evidence/{evidence_id}/financial-location-reviews")
+async def list_financial_location_reviews(
+    evidence_id: UUID,
+    location_id: UUID | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    async with get_db() as db:
+        evidence = await _find_observed_financial_location_evidence(db, evidence_id)
+        if evidence is None:
+            error(
+                "仅已观察且待复核的财报证据可查询页级定位复核历史",
+                "FINANCIAL_LOCATION_EVIDENCE_NOT_FOUND",
+                404,
+            )
+
+        filters = ["review.evidence_id = :evidence_id"]
+        params: dict[str, Any] = {
+            "evidence_id": evidence_id,
+            "limit": page_size,
+            "offset": (page - 1) * page_size,
+        }
+        if location_id:
+            filters.append("review.location_id = :location_id")
+            params["location_id"] = location_id
+        where_clause = " AND ".join(filters)
+
+        total_result = await db.execute(
+            text(
+                f"""
+                SELECT COUNT(*) AS total
+                FROM market.research_financial_metadata_location_reviews AS review
+                WHERE {where_clause}
+                """
+            ),
+            params,
+        )
+        total = int(total_result.mappings().one()["total"] or 0)
+        result = await db.execute(
+            text(
+                f"""
+                SELECT review.review_id::text AS review_id,
+                       review.evidence_id::text AS evidence_id,
+                       review.location_id::text AS location_id,
+                       review.snapshot_id::text AS snapshot_id,
+                       review.parse_run_id::text AS parse_run_id,
+                       review.page_evidence_id::text AS page_evidence_id,
+                       review.raw_hash, review.locator_version,
+                       review.reviewer_label,
+                       review.reviewer_principal_id::text AS reviewer_principal_id,
+                       review.conclusion, review.reason, review.reviewed_at,
+                       location.field_name, location.status AS location_status,
+                       page.page_number
+                FROM market.research_financial_metadata_location_reviews AS review
+                INNER JOIN market.research_financial_metadata_locations AS location
+                  ON location.location_id = review.location_id
+                INNER JOIN market.research_financial_report_page_evidence AS page
+                  ON page.parse_run_id = review.parse_run_id
+                 AND page.page_evidence_id = review.page_evidence_id
+                WHERE {where_clause}
+                ORDER BY review.reviewed_at DESC, review.review_id DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            params,
+        )
+        items = [serialize_review(dict(row)) for row in result.mappings().all()]
+
+    return ok(
+        {
+            "evidence": serialize_review(evidence),
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "has_more": (page - 1) * page_size + len(items) < total,
+            "review_scope": "financial_location_only",
+            "observed_only": True,
+            "research_readiness": "not_granted",
+            "tradable": False,
+            "order_created": False,
+            "source": "market.research_financial_metadata_location_reviews",
+            "source_version": "financial-location-review-v1",
+        }
+    )
+
+
 @router.get("/evidence/{evidence_id}/reviews")
 async def list_news_evidence_manual_reviews(evidence_id: UUID):
     async with get_db() as db:
