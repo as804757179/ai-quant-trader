@@ -625,6 +625,12 @@ export interface TradingCalendarListData {
   tradable?: boolean; source_version?: string;
 }
 
+export interface TradingRuleListData {
+  items?: Array<{ rule_type?: string; exchange?: string; board?: string; security_status?: string; effective_from?: string; effective_to?: string | null; value?: string | number | boolean; source_name?: string; source_reference?: string; rule_version?: string; source_hash?: string | null; source_hash_status?: string; parse_status?: string }>;
+  total?: number; page?: number; page_size?: number; has_more?: boolean;
+  registry_version?: string; tradable?: boolean;
+}
+
 type ApiLoader<T> = () => Promise<APIResponse<T>>;
 
 export function useReadOnlyDisplay<T>(
@@ -708,6 +714,10 @@ export function useProviderValidations(page = 1, pageSize = 50) {
 
 export function useTradingCalendar(page = 1, pageSize = 50) {
   return useReadOnlyDisplay<TradingCalendarListData>(() => get<TradingCalendarListData>("/rules/trading-calendar", { page, page_size: pageSize }), `trading-calendar-v1:p${page}:s${pageSize}`);
+}
+
+export function useTradingRules(page = 1, pageSize = 50) {
+  return useReadOnlyDisplay<TradingRuleListData>(() => get<TradingRuleListData>("/rules/trading", { page, page_size: pageSize }), `trading-rules-v1:p${page}:s${pageSize}`);
 }
 
 export function useOverviewModel() {

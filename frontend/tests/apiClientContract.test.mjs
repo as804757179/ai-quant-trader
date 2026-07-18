@@ -120,3 +120,9 @@ test("认证交易日历页面使用服务端分页且禁止 weekday fallback", 
   assert.match(models, /get<TradingCalendarListData>\("\/rules\/trading-calendar", \{ page, page_size: pageSize \}\)/);
   assert.match(page, /useTradingCalendar\(page, pageSize\)/); assert.match(page, /无 weekday fallback/); assert.doesNotMatch(page, /pendingState\(/);
 });
+
+test("交易规则页面读取版本化规则登记且不将滑点伪装为官方规则", async () => {
+  const [models, page] = await Promise.all([readFile(new URL("../src/presentation/coreModels.ts", import.meta.url), "utf8"), readFile(new URL("../src/pages/strategy/TradingRulesPage.tsx", import.meta.url), "utf8")]);
+  assert.match(models, /get<TradingRuleListData>\("\/rules\/trading", \{ page, page_size: pageSize \}\)/);
+  assert.match(page, /useTradingRules\(page, pageSize\)/); assert.match(page, /Source Hash 未记录/); assert.match(page, /未展示为官方规则/); assert.doesNotMatch(page, /pendingState\(/);
+});
