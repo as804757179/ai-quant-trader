@@ -1,6 +1,6 @@
 import type { TableProps } from "antd";
 import { pendingState } from "../../presentation/readOnlyApi";
-import { usePortfolioPositions, usePortfolioSummary } from "../../presentation/coreModels";
+import { useEquityCurve, usePortfolioPositions, usePortfolioSummary } from "../../presentation/coreModels";
 import type { SectionMetric } from "../shared/SectionPage";
 import SectionPage from "../shared/SectionPage";
 
@@ -48,7 +48,9 @@ export function AttributionPage() {
 }
 
 export function EquityPage() {
-  return <PortfolioStaticPage title="资产曲线" subtitle="资产净值、数据截止时间、估值来源和计算版本的只读曲线审计" relatedId="portfolio:equity" tableTitle="资产快照与血缘" emptyDescription="资产曲线接口待接入" columns={[{ title: "估值时点", dataIndex: "primary", width: 210 }, { title: "总资产", dataIndex: "total", width: 180 }, { title: "可用现金", dataIndex: "available", width: 180 }, { title: "已实现", dataIndex: "realized", width: 170 }, { title: "未实现", dataIndex: "unrealized", width: 170 }, { title: "费用", dataIndex: "fees", width: 150 }, { title: "对账", dataIndex: "reconciliation", width: 170 }]} metrics={[{ label: "净值点", value: "待接入", detail: "需要稳定时序数据", tone: "review" }, { label: "估值来源", value: "待接入", detail: "显示来源、时点与适用性", tone: "review" }, { label: "曲线 Hash", value: "待接入", detail: "相同输入应可复现", tone: "review" }, { label: "策略评价", value: "不输出", detail: "曲线不是盈利承诺", tone: "reject" }]} auditItems={[{ label: "资产来源", value: "必须", detail: "账务、价格与现金事件可追踪", tone: "info" }, { label: "估值资格", value: "待授权", detail: "不可把未授权 K 线用作执行估值", tone: "review" }, { label: "时间语义", value: "必须", detail: "统一 UTC+8 格式", tone: "info" }]} note="资产曲线会在接入后展示真实账务快照；当前不显示原型或随机曲线。" />;
+  const state = useEquityCurve(); const data = state.data; const items = data?.items ?? []; const known = state.kind === "live" || state.kind === "empty";
+  const rows: PortfolioRow[] = items.map((item, index) => ({ key: String(item.id ?? index), primary: item.record_time ?? "未记录", total: String(item.total_assets ?? "未记录"), available: String(item.cash ?? "未记录"), realized: String(item.daily_pnl ?? "未记录"), unrealized: String(item.market_value ?? "未记录"), fees: String(item.position_count ?? "未记录"), reconciliation: item.valuation_freshness ?? "未记录" }));
+  return <SectionPage title="资产曲线" subtitle="真实账户历史快照及其估值状态" relatedId="portfolio:equity" provenance={{ ...state.provenance, sourceVersion: data?.source_version ?? state.provenance.sourceVersion }} metadataStatusText="只读历史快照 · 不绘制假曲线 · 历史快照不等于实时净值" statusLabel={known ? "已接入（只读）" : state.message} statusTone={known ? "info" : "review"} metrics={[{ label: "快照点", value: known ? data?.total ?? items.length : "状态未知", detail: "账户记录实际返回数量", tone: known ? "info" : "review" }, { label: "最新快照", value: data?.latest_at ?? "未记录", detail: "仅显示记录时点", tone: "info" }, { label: "估值状态", value: data?.valuation_status ?? "未记录", detail: "历史快照不表示实时估值", tone: "review" }, { label: "策略评价", value: "不输出", detail: "曲线不是盈利承诺", tone: "reject" }]} tableTitle="资产快照与血缘" columns={[{ title: "记录时点", dataIndex: "primary", width: 210 }, { title: "总资产", dataIndex: "total", width: 180 }, { title: "现金", dataIndex: "available", width: 180 }, { title: "当日盈亏", dataIndex: "realized", width: 170 }, { title: "市值", dataIndex: "unrealized", width: 170 }, { title: "持仓数", dataIndex: "fees", width: 130 }, { title: "估值状态", dataIndex: "reconciliation", width: 180 }]} tableData={rows} tableSearchEnabled={false} rowKey="key" emptyDescription={state.message} auditTitle="账务与数据边界" auditItems={[{ label: "历史快照", value: "保留", detail: "不把历史记录显示为实时净值", tone: "info" }, { label: "假曲线", value: "禁止", detail: "无记录时保持空状态", tone: "reject" }, { label: "曲线 Hash", value: "未记录", detail: "接口未提供时不补造", tone: "review" }]} note="本页只展示账户历史快照；它不生成曲线、不使用未授权行情估值，也不输出策略收益结论。" />;
 }
 
 export function SettlementPage() {

@@ -756,6 +756,10 @@ export function usePortfolioPositions() {
   return useReadOnlyDisplay<PortfolioPosition[]>(() => get<PortfolioPosition[]>("/portfolio/positions", { mode: "simulation" }), "portfolio-positions-v1");
 }
 
+export function useEquityCurve() {
+  return useReadOnlyDisplay<EquityCurveData>(() => get<EquityCurveData>("/portfolio/equity-curve", { mode: "simulation", days: 30 }), "account-equity-curve-v1");
+}
+
 export function useOverviewModel() {
   const dashboard = useReadOnlyDisplay<RiskDashboardData>(
     () => get<RiskDashboardData>("/risk/dashboard", { mode: "simulation" }),

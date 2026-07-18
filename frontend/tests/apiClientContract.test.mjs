@@ -150,3 +150,9 @@ test("持仓页面保留 T+1 可用数量与估值不可用状态", async () => 
   assert.match(models, /get<PortfolioPosition\[]>\("\/portfolio\/positions", \{ mode: "simulation" \}\)/);
   assert.match(page, /usePortfolioPositions\(\)/); assert.match(page, /不释放 T\+1/); assert.match(page, /不以记录价回退估值/);
 });
+
+test("资产曲线页面仅展示历史快照且不绘制假曲线", async () => {
+  const [models, page] = await Promise.all([readFile(new URL("../src/presentation/coreModels.ts", import.meta.url), "utf8"), readFile(new URL("../src/pages/portfolio/PortfolioPages.tsx", import.meta.url), "utf8")]);
+  assert.match(models, /get<EquityCurveData>\("\/portfolio\/equity-curve", \{ mode: "simulation", days: 30 \}\)/);
+  assert.match(page, /useEquityCurve\(\)/); assert.match(page, /不绘制假曲线/); assert.match(page, /历史快照不等于实时净值/);
+});
