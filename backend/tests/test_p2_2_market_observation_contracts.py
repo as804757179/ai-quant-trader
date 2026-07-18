@@ -85,6 +85,28 @@ class MarketObservationContractTests(unittest.TestCase):
         self.assertEqual(route.methods, {"GET"})
         self.assertEqual(route_access("GET", "/api/v1/market/industry-classifications").scope, "market:read")
 
+    def test_concept_boards_are_explicitly_unavailable_without_a_source_or_fallback(self):
+        with patch("app.api.market.get_db", side_effect=AssertionError("concept endpoint must not query a fallback source")):
+            response = asyncio.run(market.list_concept_boards(page=2, page_size=1))
+
+        payload = response.data
+        self.assertEqual(payload["items"], [])
+        self.assertEqual(payload["availability_status"], "unavailable")
+        self.assertEqual(payload["data_semantics"], "unavailable")
+        self.assertEqual(payload["formal_model"], "market.concept_board_memberships")
+        self.assertIsNone(payload["provider"])
+        self.assertFalse(payload["observed_only"])
+        self.assertFalse(payload["historical_research_usable"])
+        self.assertFalse(payload["backtest_usable"])
+        self.assertEqual(payload["research_readiness"], "not_granted")
+        self.assertFalse(payload["tradable"])
+        self.assertFalse(payload["order_created"])
+
+    def test_concept_boards_route_requires_market_read_scope(self):
+        route = next(item for item in market.router.routes if item.path == "/concept-boards")
+        self.assertEqual(route.methods, {"GET"})
+        self.assertEqual(route_access("GET", "/api/v1/market/concept-boards").scope, "market:read")
+
     def test_future_models_preserve_independent_semantics_without_legacy_backfill(self):
         migration = (Path(__file__).resolve().parents[1] / "alembic" / "versions" / "041_p2_2_market_observation_semantics.py").read_text(encoding="utf-8")
         for table in ("industry_classification_observations", "concept_board_memberships", "exchange_board_observations", "sentiment_derivations"):

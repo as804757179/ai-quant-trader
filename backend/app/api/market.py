@@ -96,6 +96,40 @@ async def list_industry_classifications(
     )
 
 
+@router.get("/concept-boards")
+async def list_concept_boards(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    """概念板块正式来源未接入时只返回不可用事实，不执行回退或推断。"""
+    return ok(
+        {
+            "items": [],
+            "total": 0,
+            "page": page,
+            "page_size": page_size,
+            "has_more": False,
+            "availability_status": "unavailable",
+            "data_semantics": "unavailable",
+            "formal_model": "market.concept_board_memberships",
+            "provider": None,
+            "source": None,
+            "dataset_version": None,
+            "fetched_at": None,
+            "effective_from": None,
+            "effective_to": None,
+            "pit_capable": False,
+            "observed_only": False,
+            "historical_research_usable": False,
+            "backtest_usable": False,
+            "research_readiness": "not_granted",
+            "tradable": False,
+            "order_created": False,
+            "source_version": "market-concept-board-unavailable-v1",
+        }
+    )
+
+
 @router.get("/security-status")
 async def list_security_status(
     stock_code: str | None = Query(None, min_length=1, max_length=12),

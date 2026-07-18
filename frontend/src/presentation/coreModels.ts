@@ -536,6 +536,31 @@ export interface MarketClassificationListData {
   source_version?: string;
 }
 
+export interface UnavailableMarketObservationData {
+  items?: never[];
+  total?: number;
+  page?: number;
+  page_size?: number;
+  has_more?: boolean;
+  availability_status?: string;
+  data_semantics?: string;
+  formal_model?: string;
+  provider?: null;
+  source?: null;
+  dataset_version?: null;
+  fetched_at?: null;
+  effective_from?: null;
+  effective_to?: null;
+  pit_capable?: boolean;
+  observed_only?: boolean;
+  historical_research_usable?: boolean;
+  backtest_usable?: boolean;
+  research_readiness?: string;
+  tradable?: boolean;
+  order_created?: boolean;
+  source_version?: string;
+}
+
 export interface EquityCurvePoint {
   id?: number;
   record_time?: string;
@@ -996,6 +1021,10 @@ export function useSecurityStatus(page = 1, pageSize = 50) {
 
 export function useIndustryClassifications(page = 1, pageSize = 50) {
   return useReadOnlyDisplay<MarketClassificationListData>(() => get<MarketClassificationListData>("/market/industry-classifications", { page, page_size: pageSize }), `market-industry-current-snapshot-v1:p${page}:s${pageSize}`);
+}
+
+export function useConceptBoards(page = 1, pageSize = 50) {
+  return useReadOnlyDisplay<UnavailableMarketObservationData>(() => get<UnavailableMarketObservationData>("/market/concept-boards", { page, page_size: pageSize }), `market-concept-board-unavailable-v1:p${page}:s${pageSize}`);
 }
 
 export function useResearchEvidence(evidenceType: "announcement" | "news" | "financial_report", page = 1, pageSize = 50) {
