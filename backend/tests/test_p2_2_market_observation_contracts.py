@@ -107,6 +107,42 @@ class MarketObservationContractTests(unittest.TestCase):
         self.assertEqual(route.methods, {"GET"})
         self.assertEqual(route_access("GET", "/api/v1/market/concept-boards").scope, "market:read")
 
+    def test_exchange_board_snapshot_is_unverified_and_cannot_enter_historical_research(self):
+        snapshot_updated_at = datetime(2026, 7, 18, tzinfo=timezone.utc)
+        db = _Db(
+            _Result({"total": 2, "stock_count": 6, "latest_snapshot_updated_at": snapshot_updated_at}),
+            _Result([{"classification_name": "主板", "stock_count": 3, "snapshot_updated_at": snapshot_updated_at}]),
+        )
+        with patch("app.api.market.get_db", return_value=_DbContext(db)):
+            response = asyncio.run(market.list_exchange_boards(board="主板", page=2, page_size=1))
+
+        payload = response.data
+        item = payload["items"][0]
+        self.assertEqual(item["classification_kind"], "exchange_board")
+        self.assertEqual(item["data_semantics"], "current_snapshot")
+        self.assertEqual(item["provider"], "legacy_internal")
+        self.assertEqual(item["source"], "fundamental.stocks.board")
+        self.assertEqual(item["quality_status"], "unverified")
+        self.assertIsNone(item["dataset_version"])
+        self.assertIsNone(item["fetched_at"])
+        self.assertIsNone(item["effective_from"])
+        self.assertFalse(item["pit_capable"])
+        self.assertFalse(item["historical_research_usable"])
+        self.assertFalse(item["backtest_usable"])
+        self.assertFalse(payload["observed_only"])
+        self.assertEqual(payload["research_readiness"], "not_granted")
+        self.assertFalse(payload["tradable"])
+        self.assertFalse(payload["order_created"])
+        self.assertEqual(db.params[0]["board"], "主板")
+        self.assertIn("fundamental.stocks", db.sql[0])
+        self.assertIn("ORDER BY MAX(stock.updated_at) DESC NULLS LAST, stock.board", db.sql[1])
+        self.assertFalse(any(f"{operation} " in statement.upper() for statement in db.sql for operation in ("INSERT", "UPDATE", "DELETE")))
+
+    def test_exchange_board_snapshot_route_requires_market_read_scope(self):
+        route = next(item for item in market.router.routes if item.path == "/exchange-boards")
+        self.assertEqual(route.methods, {"GET"})
+        self.assertEqual(route_access("GET", "/api/v1/market/exchange-boards").scope, "market:read")
+
     def test_future_models_preserve_independent_semantics_without_legacy_backfill(self):
         migration = (Path(__file__).resolve().parents[1] / "alembic" / "versions" / "041_p2_2_market_observation_semantics.py").read_text(encoding="utf-8")
         for table in ("industry_classification_observations", "concept_board_memberships", "exchange_board_observations", "sentiment_derivations"):

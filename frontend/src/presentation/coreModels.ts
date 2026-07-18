@@ -1027,6 +1027,10 @@ export function useConceptBoards(page = 1, pageSize = 50) {
   return useReadOnlyDisplay<UnavailableMarketObservationData>(() => get<UnavailableMarketObservationData>("/market/concept-boards", { page, page_size: pageSize }), `market-concept-board-unavailable-v1:p${page}:s${pageSize}`);
 }
 
+export function useExchangeBoards(page = 1, pageSize = 50) {
+  return useReadOnlyDisplay<MarketClassificationListData>(() => get<MarketClassificationListData>("/market/exchange-boards", { page, page_size: pageSize }), `market-exchange-board-current-snapshot-v1:p${page}:s${pageSize}`);
+}
+
 export function useResearchEvidence(evidenceType: "announcement" | "news" | "financial_report", page = 1, pageSize = 50) {
   return useReadOnlyDisplay<ResearchEvidenceListData>(() => get<ResearchEvidenceListData>("/research/evidence", { evidence_type: evidenceType, page, page_size: pageSize }), `research-evidence-v2:${evidenceType}:p${page}:s${pageSize}`);
 }

@@ -130,6 +130,92 @@ async def list_concept_boards(
     )
 
 
+@router.get("/exchange-boards")
+async def list_exchange_boards(
+    board: str | None = Query(None, min_length=1, max_length=50),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    """只读展示 legacy 交易所板块当前快照，不提供 PIT 或历史研究资格。"""
+    filters = ["stock.board IS NOT NULL", "BTRIM(stock.board) <> ''"]
+    params = {"limit": page_size, "offset": (page - 1) * page_size}
+    if board:
+        filters.append("stock.board = :board")
+        params["board"] = board
+    where_clause = " AND ".join(filters)
+    async with get_db() as db:
+        summary_result = await db.execute(
+            text(
+                f"""
+                SELECT COUNT(DISTINCT stock.board) AS total,
+                       COUNT(*) AS stock_count,
+                       MAX(stock.updated_at) AS latest_snapshot_updated_at
+                FROM fundamental.stocks AS stock
+                WHERE {where_clause}
+                """
+            ),
+            params,
+        )
+        summary = dict(summary_result.mappings().one())
+        result = await db.execute(
+            text(
+                f"""
+                SELECT stock.board AS classification_name,
+                       COUNT(*) AS stock_count,
+                       MAX(stock.updated_at) AS snapshot_updated_at
+                FROM fundamental.stocks AS stock
+                WHERE {where_clause}
+                GROUP BY stock.board
+                ORDER BY MAX(stock.updated_at) DESC NULLS LAST, stock.board
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            params,
+        )
+        items = [dict(row) for row in result.mappings().all()]
+    for item in items:
+        item.update(
+            {
+                "classification_kind": "exchange_board",
+                "data_semantics": "current_snapshot",
+                "provider": "legacy_internal",
+                "source": "fundamental.stocks.board",
+                "dataset_version": None,
+                "fetched_at": None,
+                "effective_from": None,
+                "effective_to": None,
+                "quality_status": "unverified",
+                "pit_capable": False,
+                "historical_research_usable": False,
+                "backtest_usable": False,
+            }
+        )
+    total = int(summary["total"] or 0)
+    return ok(
+        {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "has_more": params["offset"] + len(items) < total,
+            "summary": {
+                "stock_count": int(summary["stock_count"] or 0),
+                "latest_snapshot_updated_at": summary["latest_snapshot_updated_at"],
+            },
+            "data_semantics": "current_snapshot",
+            "observed_only": False,
+            "pit_capable": False,
+            "historical_research_usable": False,
+            "backtest_usable": False,
+            "research_readiness": "not_granted",
+            "tradable": False,
+            "order_created": False,
+            "source": "fundamental.stocks.board",
+            "source_version": "market-exchange-board-current-snapshot-v1",
+        }
+    )
+
+
 @router.get("/security-status")
 async def list_security_status(
     stock_code: str | None = Query(None, min_length=1, max_length=12),
