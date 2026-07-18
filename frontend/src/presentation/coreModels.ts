@@ -631,6 +631,23 @@ export interface ResearchExclusionListData {
   source_version?: string;
 }
 
+export interface ResearchHoldingReviewListData {
+  items?: Array<{ stock_code?: string; total_qty?: number; available_qty?: number; frozen_qty?: number; position_updated_at?: string | null; review_id?: string | null; readiness_status?: string | null; research_use_scope?: string | null; requirement_profile?: string | null; unresolved_fields?: string[]; rejected_fields?: string[]; review_reason?: string | null; reviewed_at?: string | null; risk_association_status?: string; action_boundary?: string }>;
+  total?: number;
+  page?: number;
+  page_size?: number;
+  has_more?: boolean;
+  summary?: { readiness_recorded?: number; readiness_not_recorded?: number };
+  risk_association?: { status?: string; source?: string; reason?: string };
+  reassessment_status?: string;
+  observed_only?: boolean;
+  research_readiness?: string;
+  tradable?: boolean;
+  order_created?: boolean;
+  source?: string;
+  source_version?: string;
+}
+
 export interface FinancialLocationReviewListData {
   items?: Array<{ review_id?: string; location_id?: string; conclusion?: string; reason?: string; reviewed_at?: string; reviewer_label?: string; field_name?: string; location_status?: string; page_number?: number }>;
   total?: number;
@@ -968,6 +985,10 @@ export function useDeepAnalysis(page = 1, pageSize = 50, stockCode?: string, evi
 
 export function useResearchExclusions(page = 1, pageSize = 50, stockCode?: string, readinessStatus?: "review_required" | "rejected", researchUseScope?: string) {
   return useReadOnlyDisplay<ResearchExclusionListData>(() => get<ResearchExclusionListData>("/research/exclusions", { page, page_size: pageSize, stock_code: stockCode, readiness_status: readinessStatus, research_use_scope: researchUseScope }), `research-exclusions-v1:p${page}:s${pageSize}:${stockCode ?? "all"}:${readinessStatus ?? "all"}:${researchUseScope ?? "all"}`);
+}
+
+export function useResearchHoldingsReview(page = 1, pageSize = 50, mode: "simulation" | "paper" | "live" = "simulation") {
+  return useReadOnlyDisplay<ResearchHoldingReviewListData>(() => get<ResearchHoldingReviewListData>("/research/holdings-review", { page, page_size: pageSize, mode }), `research-holdings-review-v1:${mode}:p${page}:s${pageSize}`);
 }
 
 export function useResearchEvidenceDetail(evidenceId?: string) {

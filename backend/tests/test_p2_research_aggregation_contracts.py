@@ -173,6 +173,56 @@ class ResearchAggregationContractTests(unittest.TestCase):
         self.assertEqual(route.methods, {"GET"})
         self.assertEqual(route_access("GET", "/api/v1/research/exclusions").scope, "research:read")
 
+    def test_holdings_review_preserves_position_and_readiness_without_risk_inference(self):
+        reviewed_at = datetime(2026, 7, 18, tzinfo=timezone.utc)
+        db = _Db(
+            _Result({"total": 2, "readiness_recorded": 1, "readiness_not_recorded": 1}),
+            _Result(
+                [
+                    {
+                        "stock_code": "600000.SH",
+                        "total_qty": 100,
+                        "available_qty": 0,
+                        "frozen_qty": 0,
+                        "review_id": "review-1",
+                        "readiness_status": "review_required",
+                        "reviewed_at": reviewed_at,
+                    }
+                ]
+            ),
+        )
+        with patch("app.api.research.get_db", return_value=_DbContext(db)):
+            response = asyncio.run(research.list_holdings_review(mode="simulation", page=2, page_size=1))
+
+        payload = response.data
+        self.assertEqual(payload["items"][0]["stock_code"], "600000.SH")
+        self.assertEqual(payload["items"][0]["risk_association_status"], "not_recorded")
+        self.assertEqual(payload["items"][0]["action_boundary"], "not_generated")
+        self.assertEqual(payload["summary"]["readiness_recorded"], 1)
+        self.assertEqual(payload["risk_association"]["status"], "not_recorded")
+        self.assertEqual(payload["reassessment_status"], "not_evaluated")
+        self.assertTrue(payload["observed_only"])
+        self.assertEqual(payload["research_readiness"], "not_granted")
+        self.assertFalse(payload["tradable"])
+        self.assertFalse(payload["order_created"])
+        self.assertEqual(db.params[0]["mode"], "simulation")
+        self.assertIn("trade.positions", db.sql[0])
+        self.assertIn("market.research_readiness_reviews", db.sql[1])
+        self.assertIn("ORDER BY p.updated_at DESC NULLS LAST, p.id DESC", db.sql[1])
+        self.assertNotIn("risk.risk_events", db.sql[1])
+        self.assertFalse(
+            any(
+                f"{operation} " in statement.upper()
+                for statement in db.sql
+                for operation in ("INSERT", "UPDATE", "DELETE")
+            )
+        )
+
+    def test_holdings_review_route_requires_research_read_scope(self):
+        route = next(item for item in research.router.routes if item.path == "/holdings-review")
+        self.assertEqual(route.methods, {"GET"})
+        self.assertEqual(route_access("GET", "/api/v1/research/holdings-review").scope, "research:read")
+
 
 if __name__ == "__main__":
     unittest.main()

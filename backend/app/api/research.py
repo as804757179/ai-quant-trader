@@ -1729,3 +1729,95 @@ async def list_research_exclusions(
             "source_version": "research-exclusions-v1",
         }
     )
+
+
+@router.get("/holdings-review")
+async def list_holdings_review(
+    mode: Literal["simulation", "paper", "live"] = Query("simulation"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    """只读关联持仓与最新资格审核，不推断风险或生成交易动作。"""
+    params = {"mode": mode, "limit": page_size, "offset": (page - 1) * page_size}
+    async with get_db() as db:
+        summary_result = await db.execute(
+            text(
+                """
+                WITH holdings AS (
+                    SELECT p.stock_code, review.review_id
+                    FROM trade.positions AS p
+                    LEFT JOIN LATERAL (
+                        SELECT review_id
+                        FROM market.research_readiness_reviews
+                        WHERE stock_code = p.stock_code
+                        ORDER BY reviewed_at DESC, review_id DESC
+                        LIMIT 1
+                    ) AS review ON TRUE
+                    WHERE p.mode = :mode AND p.total_qty > 0
+                )
+                SELECT COUNT(*) AS total,
+                       COUNT(*) FILTER (WHERE review_id IS NOT NULL) AS readiness_recorded,
+                       COUNT(*) FILTER (WHERE review_id IS NULL) AS readiness_not_recorded
+                FROM holdings
+                """
+            ),
+            params,
+        )
+        summary = dict(summary_result.mappings().one())
+        result = await db.execute(
+            text(
+                """
+                SELECT p.stock_code, p.total_qty, p.available_qty, p.frozen_qty,
+                       p.updated_at AS position_updated_at,
+                       review.review_id, review.readiness_status,
+                       review.research_use_scope, review.requirement_profile,
+                       review.unresolved_fields, review.rejected_fields,
+                       review.review_reason, review.reviewed_at
+                FROM trade.positions AS p
+                LEFT JOIN LATERAL (
+                    SELECT review_id, readiness_status, research_use_scope,
+                           requirement_profile, unresolved_fields, rejected_fields,
+                           review_reason, reviewed_at
+                    FROM market.research_readiness_reviews
+                    WHERE stock_code = p.stock_code
+                    ORDER BY reviewed_at DESC, review_id DESC
+                    LIMIT 1
+                ) AS review ON TRUE
+                WHERE p.mode = :mode AND p.total_qty > 0
+                ORDER BY p.updated_at DESC NULLS LAST, p.id DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            params,
+        )
+        items = [serialize_review(dict(row)) for row in result.mappings().all()]
+
+    for item in items:
+        item["risk_association_status"] = "not_recorded"
+        item["action_boundary"] = "not_generated"
+    total = int(summary["total"] or 0)
+    return ok(
+        {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "has_more": params["offset"] + len(items) < total,
+            "summary": {
+                "readiness_recorded": int(summary["readiness_recorded"] or 0),
+                "readiness_not_recorded": int(summary["readiness_not_recorded"] or 0),
+            },
+            "risk_association": {
+                "status": "not_recorded",
+                "source": "risk.risk_events",
+                "reason": "risk.risk_events has no stock_code association",
+            },
+            "reassessment_status": "not_evaluated",
+            "observed_only": True,
+            "research_readiness": "not_granted",
+            "tradable": False,
+            "order_created": False,
+            "source": "trade.positions + market.research_readiness_reviews",
+            "source_version": "research-holdings-review-v1",
+        }
+    )
