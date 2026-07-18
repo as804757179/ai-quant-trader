@@ -605,6 +605,7 @@ def set_auth_service_for_testing(service: AuthService | None) -> None:
 
 _READ_SCOPE_PREFIXES = (
     ("/api/v1/stock", "market:read"),
+    ("/api/v1/data", "market:read"),
     ("/api/v1/ai", "ai:read"),
     ("/api/v1/screener", "screener:read"),
     ("/api/v1/strategy", "strategy:read"),

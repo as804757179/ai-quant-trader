@@ -150,6 +150,7 @@ class ApiSecurityContractTests(unittest.TestCase):
             ("POST", "/api/v1/trade/orders/example/sync"): "trade:broker.sync",
             ("POST", "/api/v1/trade/reconcile"): "trade:reconcile",
             ("GET", "/api/v1/readiness"): "system:readiness.read",
+            ("GET", "/api/v1/data/certified-klines"): "market:read",
             ("GET", "/metrics"): "system:metrics.read",
         }
         for (method, path), scope in expected_scopes.items():

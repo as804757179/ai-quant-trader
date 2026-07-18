@@ -10,6 +10,7 @@ from app.api import (
     ai,
     auth,
     backtest,
+    data,
     jobs,
     portfolio,
     research,
@@ -196,6 +197,7 @@ app.include_router(risk.router, prefix="/api/v1/risk", tags=["风控"])
 app.include_router(trade.router, prefix="/api/v1/trade", tags=["交易"])
 app.include_router(portfolio.router, prefix="/api/v1/portfolio", tags=["持仓资产"])
 app.include_router(research.router, prefix="/api/v1/research", tags=["研究资格"])
+app.include_router(data.router, prefix="/api/v1/data", tags=["数据认证"])
 app.include_router(ws.router, prefix="/ws", tags=["WebSocket"])
 
 

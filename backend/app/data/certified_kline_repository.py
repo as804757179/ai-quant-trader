@@ -62,6 +62,92 @@ class CertifiedKlineRepository:
             )
             return [dict(row) for row in result.mappings().all()]
 
+    async def list_lineage(
+        self,
+        *,
+        stock_code: str | None,
+        date_from: date | None,
+        date_to: date | None,
+        period: str,
+        adjustment: str,
+        batch_id: str | None,
+        page: int,
+        page_size: int,
+    ) -> dict[str, Any]:
+        adjustment = self._validate_adjustment(adjustment)
+        filters = [
+            "period = :period",
+            "adjustment = :adjustment",
+            "quality_status = 'pass'",
+            "certification_status = 'certified'",
+        ]
+        params: dict[str, Any] = {
+            "period": period,
+            "adjustment": adjustment,
+            "limit": page_size,
+            "offset": (page - 1) * page_size,
+        }
+        if stock_code:
+            filters.append("stock_code = :stock_code")
+            params["stock_code"] = KlineContract.canonical_symbol(stock_code)[0]
+        if date_from is not None:
+            filters.append("trading_date >= :date_from")
+            params["date_from"] = date_from
+        if date_to is not None:
+            filters.append("trading_date <= :date_to")
+            params["date_to"] = date_to
+        if batch_id:
+            filters.append("batch_id = :batch_id")
+            params["batch_id"] = batch_id
+        where_clause = " AND ".join(filters)
+        async with get_db() as db:
+            summary_result = await db.execute(
+                text(
+                    f"""
+                    SELECT COUNT(*) AS total,
+                           COUNT(DISTINCT stock_code) AS stock_count,
+                           MIN(trading_date) AS date_from,
+                           MAX(trading_date) AS date_to,
+                           ARRAY_AGG(DISTINCT provider ORDER BY provider) AS providers
+                    FROM market.certified_klines
+                    WHERE {where_clause}
+                    """
+                ),
+                params,
+            )
+            summary = dict(summary_result.mappings().one())
+            result = await db.execute(
+                text(
+                    f"""
+                    SELECT stock_code, trading_date, period, adjustment,
+                           provider, source, batch_id, raw_hash, quality_status,
+                           certification_status, certification_time,
+                           importer_version, normalizer_version, schema_version,
+                           research_readiness_status, review_reason
+                    FROM market.certified_klines
+                    WHERE {where_clause}
+                    ORDER BY trading_date DESC, stock_code, batch_id
+                    LIMIT :limit OFFSET :offset
+                    """
+                ),
+                params,
+            )
+            items = [dict(row) for row in result.mappings().all()]
+        total = int(summary["total"] or 0)
+        return {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "has_more": (page - 1) * page_size + len(items) < total,
+            "summary": {
+                "stock_count": int(summary["stock_count"] or 0),
+                "date_from": summary["date_from"],
+                "date_to": summary["date_to"],
+                "providers": summary["providers"] or [],
+            },
+        }
+
     async def get_bars_for_profile(
         self,
         stock_codes: list[str],
