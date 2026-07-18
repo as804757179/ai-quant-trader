@@ -139,6 +139,12 @@ test("证券状态页面不把审核状态推断为涨跌停规则", async () =>
   assert.match(page, /useSecurityStatus\(page, pageSize\)/); assert.match(page, /不按代码前缀推断规则/); assert.match(page, /状态审核不等于涨跌停规则解析/); assert.doesNotMatch(page, /pendingState\(/);
 });
 
+test("官方公告页面复用证据索引且不把公告显示为研究或交易授权", async () => {
+  const [models, page] = await Promise.all([readFile(new URL("../src/presentation/coreModels.ts", import.meta.url), "utf8"), readFile(new URL("../src/pages/market/MarketOfficialPage.tsx", import.meta.url), "utf8")]);
+  assert.match(models, /get<ResearchEvidenceListData>\("\/research\/evidence", \{ evidence_type: evidenceType, page, page_size: pageSize \}\)/);
+  assert.match(page, /useResearchEvidence\("announcement", page, pageSize\)/); assert.match(page, /不将公告显示为研究就绪或交易授权/); assert.match(page, /不以公告日期替代可得时间/); assert.doesNotMatch(page, /pendingState\(/);
+});
+
 test("账户总览页面复用只读快照且不伪造资金或对账差异", async () => {
   const [models, page] = await Promise.all([readFile(new URL("../src/presentation/coreModels.ts", import.meta.url), "utf8"), readFile(new URL("../src/pages/portfolio/PortfolioPages.tsx", import.meta.url), "utf8")]);
   assert.match(models, /get<PortfolioSnapshot>\("\/portfolio\/summary", \{ mode: "simulation" \}\)/);

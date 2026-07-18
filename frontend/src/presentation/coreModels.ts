@@ -471,6 +471,35 @@ export interface ResearchCandidateStatusData {
   source_version?: string;
 }
 
+export interface ResearchEvidence {
+  evidence_id?: string;
+  evidence_type?: "announcement" | "news" | "financial_report";
+  stock_code?: string;
+  provider?: string;
+  source?: string;
+  publisher_name?: string;
+  source_published_at?: string | null;
+  source_published_date?: string | null;
+  available_at?: string | null;
+  availability_basis?: string;
+  raw_hash?: string;
+  quality_status?: string;
+  usage_status?: string;
+}
+
+export interface ResearchEvidenceListData {
+  items?: ResearchEvidence[];
+  total?: number;
+  summary?: { observed?: number; rejected?: number; stock_count?: number; latest_available_at?: string | null };
+  page?: number;
+  page_size?: number;
+  source?: string;
+  source_version?: string;
+  research_readiness?: string;
+  tradable?: boolean;
+  order_created?: boolean;
+}
+
 export interface StrategyRuntimeStatusItem {
   type?: string;
   name?: string;
@@ -771,6 +800,10 @@ export function useFeeRules(page = 1, pageSize = 50) {
 
 export function useSecurityStatus(page = 1, pageSize = 50) {
   return useReadOnlyDisplay<SecurityStatusListData>(() => get<SecurityStatusListData>("/market/security-status", { page, page_size: pageSize }), `security-status-v1:p${page}:s${pageSize}`);
+}
+
+export function useResearchEvidence(evidenceType: "announcement" | "news" | "financial_report", page = 1, pageSize = 50) {
+  return useReadOnlyDisplay<ResearchEvidenceListData>(() => get<ResearchEvidenceListData>("/research/evidence", { evidence_type: evidenceType, page, page_size: pageSize }), `research-evidence-v2:${evidenceType}:p${page}:s${pageSize}`);
 }
 
 export function usePortfolioSummary() {
