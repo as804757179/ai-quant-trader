@@ -85,6 +85,50 @@ async def _find_reviewable_news_evidence(
     return dict(row) if row else None
 
 
+async def _find_observed_financial_location_evidence(
+    db: Any, evidence_id: UUID
+) -> dict[str, Any] | None:
+    result = await db.execute(
+        text(
+            """
+            SELECT evidence.evidence_id::text AS evidence_id, evidence.stock_code,
+                   evidence.title, evidence.raw_hash, evidence.available_at,
+                   evidence.usage_status,
+                   snapshot.snapshot_id::text AS snapshot_id,
+                   snapshot.observed_raw_hash, snapshot.observed_bytes,
+                   parse_run.parse_run_id::text AS parse_run_id,
+                   parse_run.parser_name, parse_run.parser_version,
+                   parse_run.normalization_version, parse_run.status AS parse_status,
+                   parse_run.page_count, parse_run.text_page_count, parse_run.completed_at
+            FROM market.research_evidence AS evidence
+            LEFT JOIN LATERAL (
+                SELECT item.*
+                FROM market.research_financial_report_snapshots AS item
+                WHERE item.evidence_id = evidence.evidence_id
+                  AND item.status = 'observed'
+                ORDER BY item.created_at DESC, item.snapshot_id DESC
+                LIMIT 1
+            ) AS snapshot ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT item.*
+                FROM market.research_financial_report_parse_runs AS item
+                WHERE item.snapshot_id = snapshot.snapshot_id
+                  AND item.status IN ('success', 'partial')
+                ORDER BY item.completed_at DESC, item.parse_run_id DESC
+                LIMIT 1
+            ) AS parse_run ON TRUE
+            WHERE evidence.evidence_id = :evidence_id
+              AND evidence.evidence_type = 'financial_report'
+              AND evidence.quality_status = 'observed'
+              AND evidence.usage_status = 'review_required'
+            """
+        ),
+        {"evidence_id": evidence_id},
+    )
+    row = result.mappings().one_or_none()
+    return dict(row) if row else None
+
+
 async def _load_source_usage_context(db: Any) -> dict[tuple[str, str], dict[str, Any]]:
     result = await db.execute(
         text(
@@ -925,6 +969,138 @@ async def get_research_evidence(evidence_id: UUID):
             "order_created": False,
             "source": "market.research_evidence",
             "source_version": "research-evidence-observation-v2",
+        }
+    )
+
+
+@router.get("/evidence/{evidence_id}/financial-location-candidates")
+async def list_financial_location_candidates(
+    evidence_id: UUID,
+    field_name: Literal[
+        "report_period_end",
+        "statement_currency_unit",
+        "audit_opinion_section",
+        "statement_scope_heading",
+    ]
+    | None = Query(None),
+    status: Literal["located", "ambiguous", "unresolved", "rejected"] | None = Query(
+        None
+    ),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    async with get_db() as db:
+        evidence = await _find_observed_financial_location_evidence(db, evidence_id)
+        if evidence is None:
+            error(
+                "仅已观察且待复核的财报证据可查询页级定位候选",
+                "FINANCIAL_LOCATION_EVIDENCE_NOT_FOUND",
+                404,
+            )
+
+        parse_run_id = evidence.get("parse_run_id")
+        if parse_run_id is None:
+            return ok(
+                {
+                    "evidence": serialize_review(evidence),
+                    "items": [],
+                    "total": 0,
+                    "page": page,
+                    "page_size": page_size,
+                    "has_more": False,
+                    "summary": {
+                        "located": 0,
+                        "ambiguous": 0,
+                        "unresolved": 0,
+                        "rejected": 0,
+                    },
+                    "location_status": "parse_run_unavailable",
+                    "observed_only": True,
+                    "research_readiness": "not_granted",
+                    "tradable": False,
+                    "order_created": False,
+                    "source": "market.research_financial_metadata_locations",
+                    "source_version": "financial-location-candidates-v1",
+                }
+            )
+
+        filters = ["location.parse_run_id = CAST(:parse_run_id AS uuid)"]
+        params: dict[str, Any] = {
+            "parse_run_id": parse_run_id,
+            "limit": page_size,
+            "offset": (page - 1) * page_size,
+        }
+        if field_name:
+            filters.append("location.field_name = :field_name")
+            params["field_name"] = field_name
+        if status:
+            filters.append("location.status = :status")
+            params["status"] = status
+        where_clause = " AND ".join(filters)
+
+        summary_result = await db.execute(
+            text(
+                f"""
+                SELECT COUNT(*) AS total,
+                       COUNT(*) FILTER (WHERE location.status = 'located') AS located,
+                       COUNT(*) FILTER (WHERE location.status = 'ambiguous') AS ambiguous,
+                       COUNT(*) FILTER (WHERE location.status = 'unresolved') AS unresolved,
+                       COUNT(*) FILTER (WHERE location.status = 'rejected') AS rejected
+                FROM market.research_financial_metadata_locations AS location
+                WHERE {where_clause}
+                """
+            ),
+            params,
+        )
+        summary = dict(summary_result.mappings().one())
+        result = await db.execute(
+            text(
+                f"""
+                SELECT location.location_id::text AS location_id,
+                       location.parse_run_id::text AS parse_run_id,
+                       location.page_evidence_id::text AS page_evidence_id,
+                       location.field_name, location.raw_value, location.normalized_value,
+                       location.match_start, location.match_end, location.anchor_hash,
+                       location.statement_scope, location.status, location.reason,
+                       location.locator_version, location.created_at,
+                       page.page_number, page.extraction_status,
+                       page.text_hash, page.character_count, page.failure_reason
+                FROM market.research_financial_metadata_locations AS location
+                LEFT JOIN market.research_financial_report_page_evidence AS page
+                  ON page.page_evidence_id = location.page_evidence_id
+                 AND page.parse_run_id = location.parse_run_id
+                WHERE {where_clause}
+                ORDER BY location.field_name, page.page_number NULLS LAST,
+                         location.match_start NULLS LAST, location.location_id
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            params,
+        )
+        items = [serialize_review(dict(row)) for row in result.mappings().all()]
+
+    return ok(
+        {
+            "evidence": serialize_review(evidence),
+            "items": items,
+            "total": int(summary["total"] or 0),
+            "page": page,
+            "page_size": page_size,
+            "has_more": (page - 1) * page_size + len(items)
+            < int(summary["total"] or 0),
+            "summary": {
+                "located": int(summary["located"] or 0),
+                "ambiguous": int(summary["ambiguous"] or 0),
+                "unresolved": int(summary["unresolved"] or 0),
+                "rejected": int(summary["rejected"] or 0),
+            },
+            "location_status": "available",
+            "observed_only": True,
+            "research_readiness": "not_granted",
+            "tradable": False,
+            "order_created": False,
+            "source": "market.research_financial_metadata_locations",
+            "source_version": "financial-location-candidates-v1",
         }
     )
 
