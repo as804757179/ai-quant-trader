@@ -156,3 +156,9 @@ test("资产曲线页面仅展示历史快照且不绘制假曲线", async () =>
   assert.match(models, /get<EquityCurveData>\("\/portfolio\/equity-curve", \{ mode: "simulation", days: 30 \}\)/);
   assert.match(page, /useEquityCurve\(\)/); assert.match(page, /不绘制假曲线/); assert.match(page, /历史快照不等于实时净值/);
 });
+
+test("风险总览页面使用只读聚合且不将未知状态显示为通过", async () => {
+  const [models, page] = await Promise.all([readFile(new URL("../src/presentation/coreModels.ts", import.meta.url), "utf8"), readFile(new URL("../src/pages/risk/RiskPages.tsx", import.meta.url), "utf8")]);
+  assert.match(models, /get<RiskDashboardData>\("\/risk\/dashboard", \{ mode: "simulation" \}\)/);
+  assert.match(page, /useRiskDashboard\(\)/); assert.match(page, /unknown\/stale 不显示为通过/); assert.match(page, /不从缺失状态推断通过/); assert.doesNotMatch(page, /pendingState\("风险总览/);
+});
