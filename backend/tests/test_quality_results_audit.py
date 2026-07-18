@@ -202,6 +202,21 @@ class QualityResultAuditTests(unittest.TestCase):
         self.assertEqual(response.data["source"], "market.trading_calendar")
         self.assertIn("ORDER BY calendar.trading_date DESC, calendar.exchange", db.sql[1])
 
+    def test_trading_rules_route_returns_versioned_records_without_trading_authority(self):
+        route = next(item for item in rules.router.routes if item.path == "/trading")
+        self.assertEqual(route.methods, {"GET"})
+        response = asyncio.run(rules.list_trading_rules(
+            exchange="SH", board=None, security_status=None,
+            date_from=None, date_to=None, rule_version=None, page=1, page_size=2,
+        ))
+        self.assertEqual(route_access("GET", "/api/v1/rules/trading").scope, "market:read")
+        self.assertEqual(response.data["registry_version"], "ashare-market-rules-v1")
+        self.assertFalse(response.data["tradable"])
+        self.assertFalse(response.data["order_created"])
+        self.assertTrue(response.data["has_more"])
+        self.assertTrue(all(item["source_hash"] is None for item in response.data["items"]))
+        self.assertTrue(all(item["rule_type"] != "slippage_rate" for item in response.data["items"]))
+
 
 if __name__ == "__main__":
     unittest.main()
