@@ -221,3 +221,125 @@ async def list_quality_results(
             "source_version": "quality-results-v1",
         }
     )
+
+
+@router.get("/blockers")
+async def list_data_blockers(
+    stock_code: str | None = Query(None, min_length=1, max_length=12),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    classification: str | None = Query(
+        None,
+        pattern="^(non_trading_day|suspended|security_ineligible|provider_missing|corporate_action_unresolved|unresolved)$",
+    ),
+    status: str | None = Query(None, min_length=1, max_length=40),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    filters = ["1=1"]
+    params: dict[str, Any] = {"limit": page_size, "offset": (page - 1) * page_size}
+    if stock_code:
+        filters.append("blocker.stock_code = :stock_code")
+        params["stock_code"] = stock_code.strip().upper()
+    if date_from:
+        filters.append("blocker.trading_date >= :date_from")
+        params["date_from"] = date_from
+    if date_to:
+        filters.append("blocker.trading_date <= :date_to")
+        params["date_to"] = date_to
+    if classification:
+        filters.append("blocker.classification = :classification")
+        params["classification"] = classification
+    if status:
+        filters.append("blocker.status = :status")
+        params["status"] = status.strip()
+    where_clause = " AND ".join(filters)
+    source_rows = """
+        SELECT review.date_review_id AS blocker_id, review.dataset_scope, review.stock_code,
+               review.trading_date,
+               CASE review.status
+                    WHEN 'exchange_closed' THEN 'non_trading_day'
+                    WHEN 'suspended' THEN 'suspended'
+                    WHEN 'not_listed' THEN 'security_ineligible'
+                    WHEN 'delisted' THEN 'security_ineligible'
+                    WHEN 'provider_missing' THEN 'provider_missing'
+                    ELSE 'unresolved'
+               END AS classification,
+               review.status, review.evidence_source, review.reviewer_version AS evidence_version,
+               review.evidence_time, review.reviewed_at, review.reason
+        FROM market.research_date_reviews AS review
+        WHERE review.status <> 'normal_trade'
+        UNION ALL
+        SELECT 'security-status:' || review.run_id || ':' || review.stock_code || ':' || review.effective_from || ':' || review.status,
+               review.run_id, review.stock_code, review.effective_from,
+               CASE review.status
+                    WHEN 'exchange_closed' THEN 'non_trading_day'
+                    WHEN 'suspended' THEN 'suspended'
+                    WHEN 'not_listed' THEN 'security_ineligible'
+                    WHEN 'delisted' THEN 'security_ineligible'
+                    WHEN 'provider_missing' THEN 'provider_missing'
+                    ELSE 'unresolved'
+               END,
+               review.status, review.evidence_source, review.evidence_version,
+               review.reviewed_at, review.reviewed_at, NULL
+        FROM market.security_status_reviews AS review
+        WHERE review.status IN ('exchange_closed', 'suspended', 'not_listed', 'delisted', 'provider_missing', 'unresolved')
+        UNION ALL
+        SELECT 'corporate-action:' || review.event_id, 'corporate_action_review', review.stock_code,
+               COALESCE(review.effective_date, review.ex_date, review.record_date, review.announcement_date),
+               'corporate_action_unresolved', review.verification_status, review.source,
+               review.reviewer_version, review.reviewed_at, review.reviewed_at,
+               COALESCE(review.evidence->>'finding', 'corporate action review is unresolved')
+        FROM market.corporate_action_reviews AS review
+        WHERE review.verification_status = 'unresolved'
+    """
+    async with get_db() as db:
+        summary_result = await db.execute(
+            text(
+                f"""
+                SELECT COUNT(*) AS total,
+                       COUNT(*) FILTER (WHERE blocker.classification = 'unresolved') AS unresolved,
+                       COUNT(*) FILTER (WHERE blocker.classification = 'provider_missing') AS provider_missing,
+                       MAX(blocker.reviewed_at) AS latest_reviewed_at
+                FROM ({source_rows}) AS blocker
+                WHERE {where_clause}
+                """
+            ),
+            params,
+        )
+        summary = dict(summary_result.mappings().one())
+        result = await db.execute(
+            text(
+                f"""
+                SELECT blocker.*, NULL::BOOLEAN AS readiness_blocking,
+                       'not_recorded' AS readiness_linkage_status
+                FROM ({source_rows}) AS blocker
+                WHERE {where_clause}
+                ORDER BY blocker.trading_date DESC NULLS LAST, blocker.blocker_id DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            params,
+        )
+        items = [dict(row) for row in result.mappings().all()]
+    total = int(summary["total"] or 0)
+    return ok(
+        {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "has_more": (page - 1) * page_size + len(items) < total,
+            "summary": {
+                "unresolved": int(summary["unresolved"] or 0),
+                "provider_missing": int(summary["provider_missing"] or 0),
+                "latest_reviewed_at": summary["latest_reviewed_at"],
+            },
+            "research_readiness": "not_granted",
+            "readiness_linkage": "not_recorded",
+            "tradable": False,
+            "order_created": False,
+            "source": "market.research_date_reviews,market.security_status_reviews,market.corporate_action_reviews",
+            "source_version": "data-blockers-v1",
+        }
+    )

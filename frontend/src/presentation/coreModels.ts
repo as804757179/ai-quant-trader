@@ -571,6 +571,33 @@ export interface QualityResultListData {
   source_version?: string;
 }
 
+export interface DataBlockerItem {
+  blocker_id?: string;
+  stock_code?: string;
+  trading_date?: string | null;
+  classification?: string;
+  status?: string;
+  evidence_source?: string;
+  evidence_version?: string;
+  reviewed_at?: string | null;
+  reason?: string | null;
+  readiness_blocking?: boolean | null;
+  readiness_linkage_status?: string;
+}
+
+export interface DataBlockerListData {
+  items?: DataBlockerItem[];
+  total?: number;
+  page?: number;
+  page_size?: number;
+  has_more?: boolean;
+  summary?: { unresolved?: number; provider_missing?: number; latest_reviewed_at?: string | null };
+  readiness_linkage?: string;
+  tradable?: boolean;
+  order_created?: boolean;
+  source_version?: string;
+}
+
 type ApiLoader<T> = () => Promise<APIResponse<T>>;
 
 export function useReadOnlyDisplay<T>(
@@ -635,6 +662,13 @@ export function useQualityResults(page = 1, pageSize = 50) {
   return useReadOnlyDisplay<QualityResultListData>(
     () => get<QualityResultListData>("/data/quality-results", { page, page_size: pageSize }),
     `quality-results-v1:p${page}:s${pageSize}`,
+  );
+}
+
+export function useDataBlockers(page = 1, pageSize = 50) {
+  return useReadOnlyDisplay<DataBlockerListData>(
+    () => get<DataBlockerListData>("/data/blockers", { page, page_size: pageSize }),
+    `data-blockers-v1:p${page}:s${pageSize}`,
   );
 }
 

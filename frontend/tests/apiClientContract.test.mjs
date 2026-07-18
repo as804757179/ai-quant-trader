@@ -95,3 +95,14 @@ test("数据批次和质量页面使用服务端分页的只读认证接口", as
   assert.doesNotMatch(batchesPage, /pendingState\(/);
   assert.doesNotMatch(qualityPage, /pendingState\(/);
 });
+
+test("阻塞归因页面不推断 Readiness 因果", async () => {
+  const [models, page] = await Promise.all([
+    readFile(new URL("../src/presentation/coreModels.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/pages/data/DataBlockersPage.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(models, /get<DataBlockerListData>\("\/data\/blockers", \{ page, page_size: pageSize \}\)/);
+  assert.match(page, /useDataBlockers\(page, pageSize\)/);
+  assert.match(page, /不推断 Readiness 因果/);
+  assert.doesNotMatch(page, /pendingState\(/);
+});

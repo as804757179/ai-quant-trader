@@ -160,6 +160,26 @@ class QualityResultAuditTests(unittest.TestCase):
             )
         )
 
+    def test_blocker_route_preserves_unknown_readiness_linkage(self):
+        route = next(item for item in data.router.routes if item.path == "/blockers")
+        self.assertEqual(route.methods, {"GET"})
+        self.assertEqual(route_access("GET", "/api/v1/data/blockers").scope, "market:read")
+        db = _Db(
+            [
+                _Result(one={"total": 1, "unresolved": 1, "provider_missing": 0, "latest_reviewed_at": None}),
+                _Result(rows=[{"blocker_id": "review-1", "stock_code": "000001.SZ", "trading_date": None, "classification": "unresolved", "status": "unresolved", "readiness_blocking": None, "readiness_linkage_status": "not_recorded"}]),
+            ]
+        )
+        with patch("app.api.data.get_db", return_value=_DbContext(db)):
+            response = asyncio.run(
+                data.list_data_blockers(stock_code=None, date_from=None, date_to=None, classification=None, status=None, page=1, page_size=50)
+            )
+
+        self.assertEqual(response.data["items"][0]["readiness_linkage_status"], "not_recorded")
+        self.assertIsNone(response.data["items"][0]["readiness_blocking"])
+        self.assertFalse(response.data["tradable"])
+        self.assertIn("ORDER BY blocker.trading_date DESC NULLS LAST, blocker.blocker_id DESC", db.sql[1])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,7 +2,7 @@
   "ledger_version": "2026-07-18",
   "governance_plan": "docs/superpowers/specs/2026-07-16-legacy-api-clearance-and-new-api-entry-gate.md",
   "original_total_expected": 76,
-  "total_expected": 99,
+  "total_expected": 100,
   "consumer_registry": {
     "frontend.core_models": {
       "source": "frontend/src/presentation/coreModels.ts",
@@ -45,7 +45,7 @@
     "main_http": {
       "system": "backend",
       "transport": "http",
-      "expected_count": 83,
+      "expected_count": 84,
       "interfaces": [
         {"id": "backend.stock.market-status.get", "method": "GET", "path": "/api/v1/stock/market/status", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
         {"id": "backend.stock.market-batches.get", "method": "GET", "path": "/api/v1/stock/market/batches", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
@@ -133,6 +133,7 @@
         {"id": "backend.data.certified-klines.get", "method": "GET", "path": "/api/v1/data/certified-klines", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
         {"id": "backend.data.certification-batches.get", "method": "GET", "path": "/api/v1/data/certification-batches", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
         {"id": "backend.data.quality-results.get", "method": "GET", "path": "/api/v1/data/quality-results", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
+        {"id": "backend.data.blockers.get", "method": "GET", "path": "/api/v1/data/blockers", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
 
         {"id": "backend.auth.session.post", "method": "POST", "path": "/api/v1/auth/session", "owner": "platform", "risk_level": "identity", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "auth_session_contract", "introduced_for": "legacy_clearance", "replaces": ["browser VITE_API_KEY"], "authorization": "credential_required"},
         {"id": "backend.auth.me.get", "method": "GET", "path": "/api/v1/auth/me", "owner": "platform", "risk_level": "identity", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "auth_session_contract", "introduced_for": "legacy_clearance", "replaces": ["browser VITE_API_KEY"], "authorization": "authenticated_principal"},
@@ -175,8 +176,8 @@
   },
   "openapi_baselines": {
     "main_http": {
-      "path_count": 80,
-      "sha256": "5a8029bdb8f838ead5116121293896da5aa06a104462b2a024cf117e8cf04605"
+      "path_count": 81,
+      "sha256": "031e53b4ade89c1497f957bf3e798dcc5d99bdcb843353e54dc59ec4d39d3662"
     },
     "internal_data_http": {
       "path_count": 12,
