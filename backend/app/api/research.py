@@ -1572,3 +1572,81 @@ async def get_research_candidate_status(limit: int = Query(5, ge=1, le=50)):
             "source_version": "research-candidate-status-v1",
         }
     )
+
+
+@router.get("/deep-analysis")
+async def list_deep_analysis(
+    stock_code: str | None = Query(None),
+    evidence_type: Literal["announcement", "news", "financial_report"] | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    """只读展示带可得时间的研究证据，不生成分析或交易结论。"""
+    filters = ["1=1"]
+    params: dict[str, Any] = {"limit": page_size, "offset": (page - 1) * page_size}
+    if stock_code:
+        filters.append("evidence.stock_code = :stock_code")
+        params["stock_code"] = stock_code.strip().upper()
+    if evidence_type:
+        filters.append("evidence.evidence_type = :evidence_type")
+        params["evidence_type"] = evidence_type
+    where_clause = " AND ".join(filters)
+    async with get_db() as db:
+        summary_result = await db.execute(
+            text(
+                f"""
+                SELECT COUNT(*) AS total,
+                       COUNT(*) FILTER (WHERE evidence.quality_status = 'observed') AS observed,
+                       COUNT(*) FILTER (WHERE evidence.quality_status = 'rejected') AS rejected,
+                       MAX(evidence.available_at) AS latest_available_at
+                FROM market.research_evidence AS evidence
+                WHERE {where_clause}
+                """
+            ),
+            params,
+        )
+        summary = dict(summary_result.mappings().one())
+        result = await db.execute(
+            text(
+                f"""
+                SELECT evidence.evidence_id::text AS evidence_id, evidence.stock_code,
+                       evidence.evidence_type, evidence.provider, evidence.source,
+                       evidence.available_at, evidence.received_at,
+                       evidence.source_published_at, evidence.quality_status,
+                       evidence.usage_status, evidence.raw_hash,
+                       evidence.collector_version, evidence.normalizer_version,
+                       batch.status AS batch_status, batch.received_at AS batch_received_at
+                FROM market.research_evidence AS evidence
+                INNER JOIN market.research_evidence_batches AS batch
+                    ON batch.batch_id = evidence.batch_id
+                WHERE {where_clause}
+                ORDER BY evidence.available_at DESC, evidence.evidence_id DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            params,
+        )
+        items = [serialize_review(dict(row)) for row in result.mappings().all()]
+
+    total = int(summary["total"] or 0)
+    return ok(
+        {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "has_more": params["offset"] + len(items) < total,
+            "summary": {
+                "observed": int(summary["observed"] or 0),
+                "rejected": int(summary["rejected"] or 0),
+                "latest_available_at": _json_value(summary["latest_available_at"]),
+            },
+            "analysis_conclusion": "not_generated",
+            "observed_only": True,
+            "research_readiness": "not_granted",
+            "tradable": False,
+            "order_created": False,
+            "source": "market.research_evidence + market.research_evidence_batches",
+            "source_version": "research-deep-analysis-v1",
+        }
+    )

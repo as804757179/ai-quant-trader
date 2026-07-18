@@ -165,7 +165,7 @@ class LegacyApiInventoryTests(unittest.TestCase):
 
     def test_ledger_preserves_the_original_boundary_count(self):
         self.assertEqual(self.ledger["original_total_expected"], 76)
-        self.assertEqual(self.ledger["total_expected"], 111)
+        self.assertEqual(self.ledger["total_expected"], 112)
 
 
 if __name__ == "__main__":

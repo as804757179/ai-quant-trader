@@ -599,6 +599,22 @@ export interface ResearchEvidenceDetail extends ResearchEvidence {
   } | null;
 }
 
+export interface DeepAnalysisListData {
+  items?: Array<ResearchEvidence & { collector_version?: string; normalizer_version?: string; batch_status?: string; batch_received_at?: string | null }>;
+  total?: number;
+  page?: number;
+  page_size?: number;
+  has_more?: boolean;
+  summary?: { observed?: number; rejected?: number; latest_available_at?: string | null };
+  analysis_conclusion?: string;
+  observed_only?: boolean;
+  research_readiness?: string;
+  tradable?: boolean;
+  order_created?: boolean;
+  source?: string;
+  source_version?: string;
+}
+
 export interface FinancialLocationReviewListData {
   items?: Array<{ review_id?: string; location_id?: string; conclusion?: string; reason?: string; reviewed_at?: string; reviewer_label?: string; field_name?: string; location_status?: string; page_number?: number }>;
   total?: number;
@@ -928,6 +944,10 @@ export function useSecurityStatus(page = 1, pageSize = 50) {
 
 export function useResearchEvidence(evidenceType: "announcement" | "news" | "financial_report", page = 1, pageSize = 50) {
   return useReadOnlyDisplay<ResearchEvidenceListData>(() => get<ResearchEvidenceListData>("/research/evidence", { evidence_type: evidenceType, page, page_size: pageSize }), `research-evidence-v2:${evidenceType}:p${page}:s${pageSize}`);
+}
+
+export function useDeepAnalysis(page = 1, pageSize = 50, stockCode?: string, evidenceType?: "announcement" | "news" | "financial_report") {
+  return useReadOnlyDisplay<DeepAnalysisListData>(() => get<DeepAnalysisListData>("/research/deep-analysis", { page, page_size: pageSize, stock_code: stockCode, evidence_type: evidenceType }), `research-deep-analysis-v1:p${page}:s${pageSize}:${stockCode ?? "all"}:${evidenceType ?? "all"}`);
 }
 
 export function useResearchEvidenceDetail(evidenceId?: string) {
