@@ -20,6 +20,7 @@ from app.api import (
     screener,
     stock,
     strategy,
+    system,
     trade,
     ws,
 )
@@ -202,6 +203,7 @@ app.include_router(research.router, prefix="/api/v1/research", tags=["研究资�
 app.include_router(data.router, prefix="/api/v1/data", tags=["数据认证"])
 app.include_router(rules.router, prefix="/api/v1/rules", tags=["交易规则"])
 app.include_router(market.router, prefix="/api/v1/market", tags=["市场状态"])
+app.include_router(system.router, prefix="/api/v1/system", tags=["系统可观测性"])
 app.include_router(ws.router, prefix="/ws", tags=["WebSocket"])
 
 

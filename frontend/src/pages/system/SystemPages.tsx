@@ -1,5 +1,5 @@
 import type { TableProps } from "antd";
-import { RELEASE_LOCKS } from "../../presentation/contracts";
+import { type SystemHealthData, useSystemHealth } from "../../presentation/coreModels";
 import { pendingState } from "../../presentation/readOnlyApi";
 import SectionPage from "../shared/SectionPage";
 
@@ -20,8 +20,14 @@ export function SystemAlertsPage() {
 }
 
 export function SystemHealthPage() {
-  const state = pendingState("服务健康接口待接入", "system-health-ui-v1");
-  return <SectionPage title="服务健康" subtitle="基础设施连通、数据资格和业务发布三种状态的分离展示" relatedId="system:health" provenance={state.provenance} metrics={[{ label: "基础设施", value: "待接入", detail: "API、Worker、Redis、数据库与数据服务", tone: "review" }, { label: "数据资格", value: "待审核", detail: "Certification 与 Readiness 独立判断", tone: "review" }, { label: "业务发布", value: "关闭", detail: "安全发布锁保持关闭", tone: "idle" }, { label: "实时连接", value: "待接入", detail: "显示延迟、版本与最后成功时间", tone: "review" }]} tableTitle="服务连通与版本" columns={systemColumns} rowKey="key" emptyDescription={state.message} auditTitle="发布锁状态" auditItems={RELEASE_LOCKS.map((lock) => ({ label: lock.label, value: "关闭", detail: lock.reason, tone: "reject" as const }))} note="绿色只表示某项已通过，不能代替数据资格或业务发布状态；当前所有发布与交易锁均保持关闭。" />;
+  const state = useSystemHealth(); const health = state.data; const known = state.kind === "live" || state.kind === "empty";
+  const statusLabel = (value?: string) => ({ observed: "已观察", partial_observed: "部分已观察", available: "可用", unavailable: "不可用", not_evaluated: "未评估", records_observed: "记录已观察", not_granted: "未授予" }[value ?? ""] ?? "状态未知");
+  const rows: SystemRow[] = [
+    ...(health?.infrastructure?.components ?? []).map((item, index) => ({ key: `infrastructure-${item.component ?? index}`, primary: item.component ?? "未记录", eventTime: item.observed_at ?? "未记录", owner: "基础设施", version: "未记录", relatedId: "system:health", status: `${statusLabel(item.status)} · ${item.detail ?? "详情未记录"}` })),
+    { key: "data-qualification", primary: "数据资格", eventTime: health?.data_qualification?.summary?.latest_reviewed_at ?? "未记录", owner: "market.research_readiness_reviews", version: "field-readiness-v2", relatedId: "data:qualification", status: `${statusLabel(health?.data_qualification?.status)} · 总记录 ${health?.data_qualification?.summary?.total ?? "未记录"}` },
+    { key: "business-release", primary: "业务发布", eventTime: "当前配置快照", owner: "execution safety settings", version: "execution-safety-v4", relatedId: "trade:execution-status", status: `${statusLabel(health?.business_release?.status)} · 发布锁 ${health?.business_release?.all_release_locks_closed ? "全部关闭" : "存在开启项"}` },
+  ];
+  return <SectionPage title="服务健康" subtitle="基础设施连通、数据资格和业务发布三种状态的分离展示" relatedId="system:health" provenance={{ ...state.provenance, sourceVersion: health?.source_version ?? state.provenance.sourceVersion }} metadataStatusText="只读聚合 · 不将基础设施可用推断为数据就绪或业务发布" statusLabel={known ? "已接入（只读）" : state.message} statusTone={known ? "info" : "review"} metrics={[{ label: "基础设施", value: statusLabel(health?.infrastructure?.status), detail: "仅展示本次请求可观察到的 API 与数据库", tone: health?.infrastructure?.status === "observed" ? "info" : "review" }, { label: "数据资格", value: statusLabel(health?.data_qualification?.status), detail: `Ready ${health?.data_qualification?.summary?.ready ?? "未记录"}；不传播为 Research Readiness`, tone: "review" }, { label: "业务发布", value: statusLabel(health?.business_release?.status), detail: "发布锁状态不构成交易授权", tone: "reject" }, { label: "订单创建", value: "禁止", detail: "健康接口只读，不能创建订单或变更发布锁", tone: "reject" }]} tableTitle="服务连通与资格记录" columns={systemColumns} tableData={rows} rowKey="key" emptyDescription={state.message} auditTitle="发布锁状态" auditItems={(health?.business_release?.release_locks ?? []).map((lock) => ({ label: lock.label, value: lock.enabled ? "开启" : "关闭", detail: lock.reason, tone: lock.enabled ? "review" as const : "reject" as const }))} note="接口不检查或臆测没有运行登记来源的 Worker、Redis 等组件；基础设施、数据资格和业务发布必须分别判断，且本页不授予研究、发布或交易权限。" />;
 }
 
 export function SystemAuditPage() {

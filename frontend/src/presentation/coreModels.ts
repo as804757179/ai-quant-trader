@@ -201,6 +201,15 @@ export interface HealthStatusData {
   checks?: Record<string, string>;
 }
 
+export interface SystemHealthData {
+  infrastructure?: { status?: string; components?: Array<{ component?: string; status?: string; detail?: string; observed_at?: string }> };
+  data_qualification?: { status?: string; summary?: { total?: number; ready?: number; review_required?: number; rejected?: number; latest_reviewed_at?: string | null } | null; research_readiness?: string };
+  business_release?: { status?: string; all_release_locks_closed?: boolean; release_locks?: ReleaseLock[]; tradable?: boolean; order_created?: boolean };
+  observed_only?: boolean;
+  source?: string;
+  source_version?: string;
+}
+
 export interface RiskExposureData extends PortfolioSnapshot {
   mode?: string;
   positions?: Array<{
@@ -950,6 +959,10 @@ export function useObservedQuotes(page = 1, pageSize = 50) {
 
 export function useObservedLiquidity(page = 1, pageSize = 50) {
   return useReadOnlyDisplay<ObservedLiquidityListData>(() => get<ObservedLiquidityListData>("/stock/liquidity", { page, page_size: pageSize }), `market-observed-liquidity-v1:p${page}:s${pageSize}`);
+}
+
+export function useSystemHealth() {
+  return useReadOnlyDisplay<SystemHealthData>(() => get<SystemHealthData>("/system/health"), "system-health-v1");
 }
 
 export function useExecutionStatus() {
