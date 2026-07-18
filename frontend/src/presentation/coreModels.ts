@@ -461,6 +461,44 @@ export interface StrategyRuntimeStatusData {
   source_version?: string;
 }
 
+export interface CertifiedKlineLineageItem {
+  stock_code?: string;
+  trading_date?: string;
+  period?: string;
+  adjustment?: string;
+  provider?: string;
+  source?: string;
+  batch_id?: string;
+  raw_hash?: string;
+  quality_status?: string;
+  certification_status?: string;
+  certification_time?: string;
+  importer_version?: string;
+  normalizer_version?: string;
+  schema_version?: string;
+  research_readiness_status?: string;
+  review_reason?: string | null;
+}
+
+export interface CertifiedKlineLineageData {
+  items?: CertifiedKlineLineageItem[];
+  total?: number;
+  page?: number;
+  page_size?: number;
+  has_more?: boolean;
+  summary?: {
+    stock_count?: number;
+    date_from?: string | null;
+    date_to?: string | null;
+    providers?: string[];
+  };
+  certification_scope?: string;
+  research_readiness?: string;
+  tradable?: boolean;
+  order_created?: boolean;
+  source_version?: string;
+}
+
 type ApiLoader<T> = () => Promise<APIResponse<T>>;
 
 export function useReadOnlyDisplay<T>(
@@ -499,6 +537,18 @@ export function useStrategyRuntimeStatus() {
   return useReadOnlyDisplay<StrategyRuntimeStatusData>(
     () => get<StrategyRuntimeStatusData>("/strategy/runtime-status"),
     "strategy-runtime-status-v2",
+  );
+}
+
+export function useCertifiedKlineLineage(page = 1, pageSize = 50) {
+  return useReadOnlyDisplay<CertifiedKlineLineageData>(
+    () => get<CertifiedKlineLineageData>("/data/certified-klines", {
+      period: "1d",
+      adjustment: "raw",
+      page,
+      page_size: pageSize,
+    }),
+    `certified-kline-lineage-v1:raw:p${page}:s${pageSize}`,
   );
 }
 

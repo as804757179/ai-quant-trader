@@ -61,3 +61,17 @@ test("订单和新闻证据页面使用服务端分页且不夸大查询范围",
   assert.match(newsPage, /showSearch=\{false\}/);
   assert.doesNotMatch(newsPage, /page: 1,\s*page_size: 50,/);
 });
+
+test("Certified Store 只读取认证血缘且不把认证显示为研究准入", async () => {
+  const [models, page] = await Promise.all([
+    readFile(new URL("../src/presentation/coreModels.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/pages/data/CertifiedStorePage.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(models, /export function useCertifiedKlineLineage\(page = 1, pageSize = 50\)/);
+  assert.match(models, /get<CertifiedKlineLineageData>\("\/data\/certified-klines", \{[\s\S]*?period: "1d",[\s\S]*?adjustment: "raw",[\s\S]*?page,[\s\S]*?page_size: pageSize,/);
+  assert.match(page, /useCertifiedKlineLineage\(page, pageSize\)/);
+  assert.match(page, /tablePagination=/);
+  assert.match(page, /Certification 不传播为 Research Readiness/);
+  assert.doesNotMatch(page, /pendingState\(/);
+});
