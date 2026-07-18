@@ -152,6 +152,73 @@ class CertifiedKlineLineageTests(unittest.TestCase):
         self.assertFalse(response.data["tradable"])
         self.assertFalse(response.data["order_created"])
 
+    def test_batch_route_is_read_only_and_preserves_failed_and_rejected_states(self):
+        route = next(item for item in data.router.routes if item.path == "/certification-batches")
+        self.assertEqual(route.methods, {"GET"})
+        db = _Db(
+            [
+                _Result(
+                    one={
+                        "total": 2,
+                        "certified": 0,
+                        "rejected": 1,
+                        "failed": 1,
+                        "latest_fetch_time": None,
+                    }
+                ),
+                _Result(
+                    rows=[
+                        {
+                            "batch_id": "batch-failed",
+                            "stock_code": "000001.SZ",
+                            "provider": "provider-a",
+                            "source": "source-a",
+                            "period": "1d",
+                            "start_date": None,
+                            "end_date": None,
+                            "fetch_time": None,
+                            "importer_version": "v1",
+                            "total_rows": 2,
+                            "accepted_rows": 0,
+                            "rejected_rows": 2,
+                            "quality_score": None,
+                            "status": "validation_failed",
+                            "reject_reason": "invalid source",
+                            "provider_priority": 1,
+                            "fallback_used": False,
+                            "fetch_endpoint": "endpoint",
+                            "raw_hash": "a" * 64,
+                            "created_at": None,
+                        }
+                    ]
+                ),
+            ]
+        )
+        with patch("app.api.data.get_db", return_value=_DbContext(db)):
+            response = asyncio.run(
+                data.list_certification_batches(
+                    provider=None,
+                    period=None,
+                    stock_code=None,
+                    status=None,
+                    page=1,
+                    page_size=1,
+                )
+            )
+
+        self.assertEqual(response.data["summary"]["rejected"], 1)
+        self.assertEqual(response.data["summary"]["failed"], 1)
+        self.assertEqual(response.data["items"][0]["status"], "validation_failed")
+        self.assertIn("ORDER BY batch.fetch_time DESC, batch.batch_id DESC", db.sql[1])
+        self.assertIn("LIMIT :limit OFFSET :offset", db.sql[1])
+        self.assertFalse(
+            any(
+                operation in statement.upper()
+                for statement in db.sql
+                for operation in ("INSERT", "UPDATE", "DELETE")
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
