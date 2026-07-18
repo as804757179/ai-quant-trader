@@ -198,6 +198,69 @@ class SystemHealthContractTests(unittest.TestCase):
         self.assertEqual(route.methods, {"GET"})
         self.assertEqual(route_access("GET", "/api/v1/system/jobs").scope, "system:metrics.read")
 
+    def test_system_audit_events_filter_existing_records_and_use_server_pagination(self):
+        from_time = datetime(2026, 7, 17, tzinfo=timezone.utc)
+        to_time = datetime(2026, 7, 18, tzinfo=timezone.utc)
+        db = _Db(
+            _Result(
+                {
+                    "total": 2,
+                    "event_types": 1,
+                    "successful": 1,
+                    "latest_created_at": to_time,
+                }
+            ),
+            _Result(
+                [
+                    {
+                        "event_id": "12",
+                        "event_type": "AUTH_SESSION_CREATED",
+                        "related_id": "session-1",
+                        "subject": "operator",
+                    }
+                ]
+            ),
+        )
+        with patch("app.api.system.get_db", return_value=_DbContext(db)):
+            response = asyncio.run(
+                system.list_system_audit_events(
+                    event_type="AUTH_SESSION_CREATED",
+                    related_id="session-1",
+                    subject="operator",
+                    from_time=from_time,
+                    to_time=to_time,
+                    page=2,
+                    page_size=1,
+                )
+            )
+
+        payload = response.data
+        self.assertEqual(payload["total"], 2)
+        self.assertEqual(payload["summary"]["event_types"], 1)
+        self.assertEqual(payload["items"][0]["event_id"], "12")
+        self.assertFalse(payload["integrity"]["event_hash_observed"])
+        self.assertFalse(payload["tradable"])
+        self.assertFalse(payload["order_created"])
+        self.assertEqual(db.params[0]["event_type"], "AUTH_SESSION_CREATED")
+        self.assertEqual(db.params[0]["related_id"], "session-1")
+        self.assertEqual(db.params[0]["subject"], "operator")
+        self.assertEqual(db.params[1]["from_time"], from_time)
+        self.assertEqual(db.params[1]["to_time"], to_time)
+        self.assertIn("audit.operation_logs", db.sql[0])
+        self.assertIn("ORDER BY event.created_at DESC NULLS LAST, event.id DESC", db.sql[1])
+        self.assertFalse(
+            any(
+                f"{operation} " in statement.upper()
+                for statement in db.sql
+                for operation in ("INSERT", "UPDATE", "DELETE")
+            )
+        )
+
+    def test_system_audit_events_route_requires_metrics_scope(self):
+        route = next(item for item in system.router.routes if item.path == "/audit-events")
+        self.assertEqual(route.methods, {"GET"})
+        self.assertEqual(route_access("GET", "/api/v1/system/audit-events").scope, "system:metrics.read")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -242,6 +242,29 @@ export interface SystemJobListData {
   source_version?: string;
 }
 
+export interface SystemAuditEventListData {
+  items?: Array<{ event_id?: string; event_type?: string; entity_type?: string | null; related_id?: string | null; subject?: string | null; result?: string | null; created_at?: string | null; before_recorded?: boolean; after_recorded?: boolean }>;
+  total?: number;
+  page?: number;
+  page_size?: number;
+  has_more?: boolean;
+  summary?: { event_types?: number; successful?: number; latest_created_at?: string | null };
+  integrity?: { event_hash_observed?: boolean; event_hash_status?: string };
+  research_readiness?: string;
+  tradable?: boolean;
+  order_created?: boolean;
+  source?: string;
+  source_version?: string;
+}
+
+export interface SystemAuditEventFilters {
+  eventType?: string;
+  relatedId?: string;
+  subject?: string;
+  fromTime?: string;
+  toTime?: string;
+}
+
 export interface RiskExposureData extends PortfolioSnapshot {
   mode?: string;
   positions?: Array<{
@@ -1003,6 +1026,10 @@ export function useSystemAlerts(page = 1, pageSize = 50) {
 
 export function useSystemJobs(page = 1, pageSize = 50) {
   return useReadOnlyDisplay<SystemJobListData>(() => get<SystemJobListData>("/system/jobs", { page, page_size: pageSize }), `system-jobs-v1:p${page}:s${pageSize}`);
+}
+
+export function useSystemAuditEvents(page = 1, pageSize = 50, filters: SystemAuditEventFilters = {}) {
+  return useReadOnlyDisplay<SystemAuditEventListData>(() => get<SystemAuditEventListData>("/system/audit-events", { page, page_size: pageSize, event_type: filters.eventType, related_id: filters.relatedId, subject: filters.subject, from_time: filters.fromTime, to_time: filters.toTime }), `system-audit-events-v1:p${page}:s${pageSize}:f${JSON.stringify(filters)}`);
 }
 
 export function useExecutionStatus() {

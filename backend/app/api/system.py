@@ -232,6 +232,97 @@ async def list_system_jobs(
     )
 
 
+@router.get("/audit-events")
+async def list_system_audit_events(
+    event_type: str | None = Query(None, max_length=100),
+    related_id: str | None = Query(None, max_length=100),
+    subject: str | None = Query(None, max_length=50),
+    from_time: datetime | None = Query(None),
+    to_time: datetime | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    """只读查询平台操作审计事件，不返回审计载荷或提供变更入口。"""
+    filters = ["1=1"]
+    params: dict[str, Any] = {"limit": page_size, "offset": (page - 1) * page_size}
+    for value, column, parameter in (
+        (event_type, "event.operation", "event_type"),
+        (related_id, "event.entity_id", "related_id"),
+        (subject, "event.operator", "subject"),
+    ):
+        if value:
+            filters.append(f"{column} = :{parameter}")
+            params[parameter] = value
+    if from_time:
+        filters.append("event.created_at >= :from_time")
+        params["from_time"] = from_time
+    if to_time:
+        filters.append("event.created_at <= :to_time")
+        params["to_time"] = to_time
+    where_clause = " AND ".join(filters)
+    async with get_db() as db:
+        summary_result = await db.execute(
+            text(
+                f"""
+                SELECT COUNT(*) AS total,
+                       COUNT(DISTINCT event.operation) AS event_types,
+                       COUNT(*) FILTER (WHERE event.result = 'SUCCESS') AS successful,
+                       MAX(event.created_at) AS latest_created_at
+                FROM audit.operation_logs AS event
+                WHERE {where_clause}
+                """
+            ),
+            params,
+        )
+        summary = dict(summary_result.mappings().one())
+        result = await db.execute(
+            text(
+                f"""
+                SELECT event.id::text AS event_id, event.operation AS event_type,
+                       event.entity_type, event.entity_id AS related_id,
+                       event.operator AS subject, event.result, event.created_at,
+                       event.before_data IS NOT NULL AS before_recorded,
+                       event.after_data IS NOT NULL AS after_recorded
+                FROM audit.operation_logs AS event
+                WHERE {where_clause}
+                ORDER BY event.created_at DESC NULLS LAST, event.id DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            params,
+        )
+        items = [dict(row) for row in result.mappings().all()]
+
+    total = int(summary["total"] or 0)
+    return ok(
+        {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "has_more": params["offset"] + len(items) < total,
+            "summary": {
+                "event_types": int(summary["event_types"] or 0),
+                "successful": int(summary["successful"] or 0),
+                "latest_created_at": (
+                    summary["latest_created_at"].isoformat()
+                    if summary["latest_created_at"]
+                    else None
+                ),
+            },
+            "integrity": {
+                "event_hash_observed": False,
+                "event_hash_status": "not_recorded",
+            },
+            "research_readiness": "not_granted",
+            "tradable": False,
+            "order_created": False,
+            "source": "audit.operation_logs",
+            "source_version": "system-audit-events-v1",
+        }
+    )
+
+
 @router.get("/health")
 async def get_system_health():
     """只读汇总当前请求可观察到的基础设施、数据资格和发布锁状态。"""
