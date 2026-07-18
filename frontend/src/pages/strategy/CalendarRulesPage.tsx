@@ -1,13 +1,13 @@
 import type { TableProps } from "antd";
-import { pendingState } from "../../presentation/readOnlyApi";
+import { useState } from "react";
+import { useTradingCalendar } from "../../presentation/coreModels";
 import SectionPage from "../shared/SectionPage";
 
-interface CalendarRow { key: string; tradeDate: string; exchange: string; calendarStatus: string; source: string; version: string; coverage: string; }
-
+interface CalendarRow { key: string; tradeDate: string; exchange: string; calendarStatus: string; source: string; coverage: string; }
 export default function CalendarRulesPage() {
-  const state = pendingState("认证交易日历接口待接入", "rules-calendar-ui-v1");
-  const columns: TableProps<CalendarRow>["columns"] = [
-    { title: "日期", dataIndex: "tradeDate", width: 170 }, { title: "交易所", dataIndex: "exchange", width: 140 }, { title: "日历状态", dataIndex: "calendarStatus", width: 180 }, { title: "来源", dataIndex: "source", width: 240 }, { title: "版本", dataIndex: "version", width: 170 }, { title: "覆盖范围", dataIndex: "coverage", width: 190 },
-  ];
-  return <SectionPage title="认证交易日历" subtitle="沪深交易日历来源、版本、覆盖区间与失败关闭状态" relatedId="rules:calendar" provenance={state.provenance} metrics={[{ label: "认证日历", value: "待接入", detail: "可信回测只读取认证日历", tone: "review" }, { label: "weekday fallback", value: "禁止", detail: "周末、节假日与临时休市不能猜测", tone: "reject" }, { label: "覆盖区间", value: "待接入", detail: "无覆盖时必须拒绝", tone: "review" }, { label: "Fixture 日历", value: "仅测试", detail: "不得进入可信回测入口", tone: "idle" }]} tableTitle="日历覆盖与版本" columns={columns} rowKey="key" emptyDescription={state.message} auditTitle="日历门禁" auditItems={[{ label: "非交易日", value: "拒绝数据", detail: "不补假 K 线", tone: "reject" }, { label: "日历缺失", value: "失败关闭", detail: "不能由 weekday 推断", tone: "reject" }, { label: "来源版本", value: "必须", detail: "需进入数据和结果血缘", tone: "info" }]} note="日历规则为回测、研究和状态审核提供时点边界；此页只读，不解锁任何业务发布能力。" />;
+  const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(50); const state = useTradingCalendar(page, pageSize); const total = state.data?.total;
+  const known = (state.kind === "live" || state.kind === "empty") && typeof total === "number";
+  const rows: CalendarRow[] = (state.data?.items ?? []).map((item, index) => ({ key: `${item.trading_date ?? index}-${item.exchange ?? index}`, tradeDate: item.trading_date ?? "未记录", exchange: item.exchange ?? "未记录", calendarStatus: item.status ?? "未记录", source: item.source ?? "未记录", coverage: item.is_trading_day ? "交易日" : "非交易日" }));
+  const columns: TableProps<CalendarRow>["columns"] = [{ title: "日期", dataIndex: "tradeDate", width: 170 }, { title: "交易所", dataIndex: "exchange", width: 140 }, { title: "日历状态", dataIndex: "calendarStatus", width: 180 }, { title: "来源", dataIndex: "source", width: 240 }, { title: "交易日", dataIndex: "coverage", width: 150 }];
+  return <SectionPage title="认证交易日历" subtitle="交易日历来源、覆盖范围与确认状态" relatedId="rules:calendar" provenance={{ ...state.provenance, sourceVersion: state.data?.source_version ?? state.provenance.sourceVersion }} metadataStatusText="只读认证日历 · 服务端分页 · 无 weekday fallback" statusLabel={known ? "已接入（只读）" : state.message} statusTone={known ? "info" : "review"} metrics={[{ label: "日历记录", value: known ? total : "状态未知", detail: "当前服务端筛选范围", tone: known ? "info" : "review" }, { label: "已确认", value: known ? state.data?.summary?.confirmed ?? "未记录" : "状态未知", detail: "只使用已记录状态", tone: "info" }, { label: "未解决", value: known ? state.data?.summary?.unresolved ?? "未记录" : "状态未知", detail: "保持 fail closed", tone: "review" }, { label: "weekday fallback", value: "禁止", detail: "不从周几猜测交易日", tone: "reject" }]} tableTitle="日历覆盖与状态（服务端分页）" columns={columns} tableData={rows} tablePagination={known ? { current: state.data?.page ?? page, pageSize: state.data?.page_size ?? pageSize, total, onChange: (nextPage, nextPageSize) => { setPage(nextPageSize === pageSize ? nextPage : 1); setPageSize(nextPageSize); } } : undefined} tableSearchEnabled={false} rowKey="key" emptyDescription={state.message} auditTitle="日历门禁" auditItems={[{ label: "日历缺失", value: "失败关闭", detail: "不使用 weekday 推断", tone: "reject" }, { label: "只读查询", value: "无写入", detail: "不触发日历同步或认证", tone: "info" }]} note="本页不授予回测、Research Readiness 或交易权限。" />;
 }

@@ -618,6 +618,13 @@ export interface ProviderValidationListData {
   source_version?: string;
 }
 
+export interface TradingCalendarListData {
+  items?: Array<{ exchange?: string; trading_date?: string; is_trading_day?: boolean; source?: string; status?: string }>;
+  total?: number; page?: number; page_size?: number; has_more?: boolean;
+  summary?: { confirmed?: number; unresolved?: number; coverage_from?: string | null; coverage_to?: string | null };
+  tradable?: boolean; source_version?: string;
+}
+
 type ApiLoader<T> = () => Promise<APIResponse<T>>;
 
 export function useReadOnlyDisplay<T>(
@@ -697,6 +704,10 @@ export function useProviderValidations(page = 1, pageSize = 50) {
     () => get<ProviderValidationListData>("/data/provider-validations", { page, page_size: pageSize }),
     `provider-validations-v1:p${page}:s${pageSize}`,
   );
+}
+
+export function useTradingCalendar(page = 1, pageSize = 50) {
+  return useReadOnlyDisplay<TradingCalendarListData>(() => get<TradingCalendarListData>("/rules/trading-calendar", { page, page_size: pageSize }), `trading-calendar-v1:p${page}:s${pageSize}`);
 }
 
 export function useOverviewModel() {

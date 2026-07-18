@@ -114,3 +114,9 @@ test("Provider 验证页面只读展示交叉验证记录", async () => {
   assert.match(page, /不作为运行时 fallback/);
   assert.doesNotMatch(page, /pendingState\(/);
 });
+
+test("认证交易日历页面使用服务端分页且禁止 weekday fallback", async () => {
+  const [models, page] = await Promise.all([readFile(new URL("../src/presentation/coreModels.ts", import.meta.url), "utf8"), readFile(new URL("../src/pages/strategy/CalendarRulesPage.tsx", import.meta.url), "utf8")]);
+  assert.match(models, /get<TradingCalendarListData>\("\/rules\/trading-calendar", \{ page, page_size: pageSize \}\)/);
+  assert.match(page, /useTradingCalendar\(page, pageSize\)/); assert.match(page, /无 weekday fallback/); assert.doesNotMatch(page, /pendingState\(/);
+});
