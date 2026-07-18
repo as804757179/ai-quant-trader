@@ -478,6 +478,8 @@ export interface ResearchEvidence {
   provider?: string;
   source?: string;
   publisher_name?: string;
+  title?: string;
+  document_url?: string;
   source_published_at?: string | null;
   source_published_date?: string | null;
   received_at?: string | null;
@@ -486,6 +488,33 @@ export interface ResearchEvidence {
   raw_hash?: string;
   quality_status?: string;
   usage_status?: string;
+}
+
+export interface ResearchEvidenceDetail extends ResearchEvidence {
+  financial_report_detail?: {
+    report_period_end?: string;
+    currency_code?: string;
+    currency_unit?: string;
+    audit_opinion?: string;
+    revision_status?: string;
+    detail_parse_status?: string;
+  } | null;
+  financial_report_snapshot_location?: {
+    snapshot_status?: string;
+    parse_run?: { status?: string; page_count?: number; locations?: Array<{ field_name?: string; status?: string }> } | null;
+  } | null;
+}
+
+export interface FinancialLocationReviewListData {
+  items?: Array<{ review_id?: string; location_id?: string; conclusion?: string; reason?: string; reviewed_at?: string; reviewer_label?: string; field_name?: string; location_status?: string; page_number?: number }>;
+  total?: number;
+  page?: number;
+  page_size?: number;
+  review_scope?: string;
+  source_version?: string;
+  research_readiness?: string;
+  tradable?: boolean;
+  order_created?: boolean;
 }
 
 export interface ResearchEvidenceListData {
@@ -805,6 +834,14 @@ export function useSecurityStatus(page = 1, pageSize = 50) {
 
 export function useResearchEvidence(evidenceType: "announcement" | "news" | "financial_report", page = 1, pageSize = 50) {
   return useReadOnlyDisplay<ResearchEvidenceListData>(() => get<ResearchEvidenceListData>("/research/evidence", { evidence_type: evidenceType, page, page_size: pageSize }), `research-evidence-v2:${evidenceType}:p${page}:s${pageSize}`);
+}
+
+export function useResearchEvidenceDetail(evidenceId?: string) {
+  return useReadOnlyDisplay<ResearchEvidenceDetail>(evidenceId ? () => get<ResearchEvidenceDetail>(`/research/evidence/${encodeURIComponent(evidenceId)}`) : undefined, `research-evidence-detail-v1:${evidenceId ?? "unselected"}`);
+}
+
+export function useFinancialLocationReviews(evidenceId?: string) {
+  return useReadOnlyDisplay<FinancialLocationReviewListData>(evidenceId ? () => get<FinancialLocationReviewListData>(`/research/evidence/${encodeURIComponent(evidenceId)}/financial-location-reviews`, { page: 1, page_size: 50 }) : undefined, `financial-location-review-v1:${evidenceId ?? "unselected"}`);
 }
 
 export function usePortfolioSummary() {
