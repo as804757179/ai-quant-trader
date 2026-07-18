@@ -1,5 +1,6 @@
 import type { TableProps } from "antd";
 import { pendingState } from "../../presentation/readOnlyApi";
+import { usePortfolioSummary } from "../../presentation/coreModels";
 import type { SectionMetric } from "../shared/SectionPage";
 import SectionPage from "../shared/SectionPage";
 
@@ -27,7 +28,9 @@ const accountColumns: TableProps<PortfolioRow>["columns"] = [
 ];
 
 export function AccountPage() {
-  return <PortfolioStaticPage title="账户总览" subtitle="模拟账户资产、可用现金、已实现与未实现盈亏的分离展示" relatedId="portfolio:account" tableTitle="账户账务快照" emptyDescription="账户总览接口待接入" columns={accountColumns} metrics={[{ label: "总资产", value: "待接入", detail: "不可展示伪造资金", tone: "review" }, { label: "可用现金", value: "待接入", detail: "需与冻结资金分离", tone: "review" }, { label: "已实现盈亏", value: "待接入", detail: "仅由已完成交易产生", tone: "review" }, { label: "对账差异", value: "待接入", detail: "必须可追踪", tone: "review" }]} auditItems={[{ label: "资金模式", value: "Simulation", detail: "不连接真实账户资金", tone: "info" }, { label: "账务时间", value: "必须", detail: "显示 Asia/Shanghai 精确时间", tone: "info" }, { label: "执行权限", value: "关闭", detail: "账户可见不等于允许交易", tone: "reject" }]} note="账户页作为账务审计入口，交易、资金和收益字段未接入时必须保持待接入状态。" />;
+  const state = usePortfolioSummary(); const data = state.data; const known = state.kind === "live" && data?.account_record_id != null;
+  const rows: PortfolioRow[] = known ? [{ key: String(data.account_record_id), primary: String(data.account_record_id), total: String(data.total_assets ?? "未记录"), available: String(data.cash ?? "未记录"), realized: String(data.daily_pnl ?? "未记录"), unrealized: String(data.market_value ?? "未记录"), fees: "未记录", reconciliation: data.valuation_freshness ?? "未记录" }] : [];
+  return <SectionPage title="账户总览" subtitle="模拟账户资产、现金、当日盈亏和估值快照" relatedId="portfolio:account" provenance={{ ...state.provenance, sourceVersion: data?.source_version ?? state.provenance.sourceVersion }} metadataStatusText="只读账户快照 · 不伪造初始资金或对账差异" statusLabel={known ? "已接入（只读）" : state.message} statusTone={known ? "info" : "review"} metrics={[{ label: "总资产", value: known ? data?.total_assets ?? "未记录" : "状态未知", detail: "账户快照原始值", tone: known ? "info" : "review" }, { label: "可用现金", value: known ? data?.cash ?? "未记录" : "状态未知", detail: "账户快照原始值", tone: known ? "info" : "review" }, { label: "持仓数", value: known ? data?.position_count ?? "未记录" : "状态未知", detail: "当前快照记录", tone: known ? "info" : "review" }, { label: "执行权限", value: "未授予", detail: "账户可见不等于允许交易", tone: "reject" }]} tableTitle="账户账务快照" columns={accountColumns} tableData={rows} tableSearchEnabled={false} rowKey="key" emptyDescription={state.message} auditTitle="账务与数据边界" auditItems={[{ label: "快照时间", value: data?.account_snapshot_time ?? "未记录", detail: "未记录时不推断时间", tone: "info" }, { label: "估值新鲜度", value: data?.valuation_freshness ?? "未记录", detail: "stale 或 unknown 不显示为通过", tone: "review" }, { label: "对账差异", value: "未记录", detail: "接口未提供时不补造", tone: "reject" }]} note="账户页只展示现有账户快照；不显示伪造资金、已实现盈亏、费用或对账差异。" />;
 }
 
 export function PositionsPage() {

@@ -735,6 +735,10 @@ export function useSecurityStatus(page = 1, pageSize = 50) {
   return useReadOnlyDisplay<SecurityStatusListData>(() => get<SecurityStatusListData>("/market/security-status", { page, page_size: pageSize }), `security-status-v1:p${page}:s${pageSize}`);
 }
 
+export function usePortfolioSummary() {
+  return useReadOnlyDisplay<PortfolioSnapshot>(() => get<PortfolioSnapshot>("/portfolio/summary", { mode: "simulation" }), "portfolio-summary-v1");
+}
+
 export function useOverviewModel() {
   const dashboard = useReadOnlyDisplay<RiskDashboardData>(
     () => get<RiskDashboardData>("/risk/dashboard", { mode: "simulation" }),
