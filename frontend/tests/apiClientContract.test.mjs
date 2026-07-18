@@ -40,6 +40,12 @@ test("行情批次使用服务端分页并保留每批 fallback 记录", async (
   assert.doesNotMatch(page, /fallback: "未使用"/);
 });
 
+test("价格盘口页面只读取每证券最新已观察报价且不授予执行参考", async () => {
+  const [models, page] = await Promise.all([readFile(new URL("../src/presentation/coreModels.ts", import.meta.url), "utf8"), readFile(new URL("../src/pages/market/MarketPricePage.tsx", import.meta.url), "utf8")]);
+  assert.match(models, /get<ObservedQuoteListData>\("\/stock\/quotes", \{ page, page_size: pageSize \}\)/);
+  assert.match(page, /useObservedQuotes\(page, pageSize\)/); assert.match(page, /每证券最新已观察报价/); assert.match(page, /报价展示不授予 Execution Reference/); assert.doesNotMatch(page, /pendingState\(/);
+});
+
 test("订单和新闻证据页面使用服务端分页且不夸大查询范围", async () => {
   const [models, ordersPage, newsPage] = await Promise.all([
     readFile(new URL("../src/presentation/coreModels.ts", import.meta.url), "utf8"),

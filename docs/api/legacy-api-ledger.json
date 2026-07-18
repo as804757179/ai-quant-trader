@@ -2,7 +2,7 @@
   "ledger_version": "2026-07-18",
   "governance_plan": "docs/superpowers/specs/2026-07-16-legacy-api-clearance-and-new-api-entry-gate.md",
   "original_total_expected": 76,
-  "total_expected": 105,
+  "total_expected": 106,
   "consumer_registry": {
     "frontend.core_models": {
       "source": "frontend/src/presentation/coreModels.ts",
@@ -45,7 +45,7 @@
     "main_http": {
       "system": "backend",
       "transport": "http",
-      "expected_count": 89,
+      "expected_count": 90,
       "interfaces": [
         {"id": "backend.stock.market-status.get", "method": "GET", "path": "/api/v1/stock/market/status", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
         {"id": "backend.stock.market-batches.get", "method": "GET", "path": "/api/v1/stock/market/batches", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
@@ -54,6 +54,7 @@
         {"id": "backend.stock.backfill-kline.post", "method": "POST", "path": "/api/v1/stock/backfill-kline", "owner": "market_data", "risk_level": "admin", "disposition": "async_job", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_worker_runtime_contract", "review_resolution": "retain_worker_runtime_verified"},
         {"id": "backend.stock.profile.get", "method": "GET", "path": "/api/v1/stock/{code}/profile", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_contract"},
         {"id": "backend.stock.quote.get", "method": "GET", "path": "/api/v1/stock/{code}/quote", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_contract", "review_resolution": "retain_runtime_verified"},
+        {"id": "backend.stock.quotes.get", "method": "GET", "path": "/api/v1/stock/quotes", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
         {"id": "backend.stock.kline.get", "method": "GET", "path": "/api/v1/stock/{code}/kline", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_contract", "review_resolution": "retain_runtime_verified"},
         {"id": "backend.stock.fund-flow.get", "method": "GET", "path": "/api/v1/stock/{code}/fund-flow", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_safe_no_data_contract", "review_resolution": "retain_runtime_verified"},
         {"id": "backend.stock.news.get", "method": "GET", "path": "/api/v1/stock/{code}/news", "owner": "market_data", "risk_level": "read", "disposition": "split", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_safe_no_data_contract", "review_resolution": "retain_announcement_compatibility"},

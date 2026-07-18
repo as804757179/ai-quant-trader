@@ -239,6 +239,111 @@ async def get_market_quote_batches(
     )
 
 
+@router.get("/quotes")
+async def list_observed_quotes(
+    stock_code: str | None = Query(None),
+    market: str | None = Query(None),
+    board: str | None = Query(None),
+    freshness_status: str | None = Query(None, pattern="^(fresh|stale)$"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    """只读返回每只证券最新的已观察行情及其完整 provenance。"""
+    now = datetime.now(ZoneInfo("Asia/Shanghai"))
+    threshold_seconds = max(
+        60,
+        int(settings.DATA_CACHE_TTL_QUOTE) * 3,
+        int(settings.DATA_SYNC_INTERVAL_REALTIME) * 3,
+    )
+    filters = [
+        "provenance.quality_status = 'pass'",
+        "provenance.fallback_used = FALSE",
+        "batch.status IN ('success', 'partial')",
+    ]
+    params: dict[str, Any] = {
+        "now": now,
+        "fresh_cutoff": now - timedelta(seconds=threshold_seconds),
+        "limit": page_size,
+        "offset": (page - 1) * page_size,
+    }
+    if stock_code:
+        filters.append("quote.stock_code = :stock_code")
+        params["stock_code"] = stock_code.strip().upper()
+    if market:
+        filters.append("stock.market = :market")
+        params["market"] = market.strip().upper()
+    if board:
+        filters.append("stock.board = :board")
+        params["board"] = board.strip()
+    if freshness_status:
+        filters.append(
+            "CASE WHEN quote.time >= :fresh_cutoff THEN 'fresh' ELSE 'stale' END = :freshness_status"
+        )
+        params["freshness_status"] = freshness_status
+    where_clause = " AND ".join(filters)
+    latest_quotes_cte = f"""
+        WITH latest_quotes AS (
+            SELECT DISTINCT ON (quote.stock_code)
+                   quote.stock_code, stock.market, stock.board, quote.time AS quote_time,
+                   quote.price, quote.bid1_price, quote.bid1_vol,
+                   quote.bid2_price, quote.bid2_vol, quote.bid3_price, quote.bid3_vol,
+                   quote.ask1_price, quote.ask1_vol,
+                   quote.ask2_price, quote.ask2_vol, quote.ask3_price, quote.ask3_vol,
+                   provenance.provider, provenance.source, provenance.fetch_endpoint,
+                   provenance.provider_time, provenance.fetched_at, provenance.received_at,
+                   provenance.batch_id::text AS batch_id, provenance.raw_hash,
+                   provenance.fallback_used, provenance.quality_status,
+                   provenance.collector_version, provenance.normalizer_version,
+                   batch.status AS batch_status,
+                   GREATEST(0, EXTRACT(EPOCH FROM (:now - quote.time)))::bigint AS lag_seconds,
+                   CASE WHEN quote.time >= :fresh_cutoff THEN 'fresh' ELSE 'stale' END AS freshness_status,
+                   CASE
+                       WHEN quote.bid1_price IS NOT NULL AND quote.ask1_price IS NOT NULL
+                       THEN 'level_1_recorded'
+                       ELSE 'not_recorded'
+                   END AS order_book_status
+            FROM market.quotes AS quote
+            INNER JOIN market.quote_provenance AS provenance
+                ON provenance.stock_code = quote.stock_code
+               AND provenance.quote_time = quote.time
+            INNER JOIN market.quote_batches AS batch ON batch.batch_id = provenance.batch_id
+            LEFT JOIN fundamental.stocks AS stock ON stock.code = quote.stock_code
+            WHERE {where_clause}
+            ORDER BY quote.stock_code, quote.time DESC, provenance.received_at DESC
+        )
+    """
+    async with get_db() as db:
+        total_result = await db.execute(text(f"{latest_quotes_cte} SELECT COUNT(*) FROM latest_quotes"), params)
+        total = int(total_result.scalar() or 0)
+        result = await db.execute(
+            text(
+                f"""
+                {latest_quotes_cte}
+                SELECT * FROM latest_quotes
+                ORDER BY quote_time DESC, stock_code ASC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            params,
+        )
+        items = [dict(row) for row in result.mappings().all()]
+    return ok(
+        {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "has_more": params["offset"] + len(items) < total,
+            "observed_only": True,
+            "research_readiness": "not_granted",
+            "tradable": False,
+            "order_created": False,
+            "source": "market.quotes + market.quote_provenance + market.quote_batches",
+            "source_version": "market-observed-quotes-v1",
+        }
+    )
+
+
 @router.post("/sync-universe", status_code=202)
 async def sync_stock_universe(
     request: Request,

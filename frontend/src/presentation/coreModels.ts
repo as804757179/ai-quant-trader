@@ -423,6 +423,20 @@ export interface MarketQuoteBatchListData {
   source_version?: string;
 }
 
+export interface ObservedQuoteListData {
+  items?: Array<{ stock_code?: string; market?: string | null; board?: string | null; quote_time?: string; price?: number | null; bid1_price?: number | null; ask1_price?: number | null; provider?: string; source?: string; fetch_endpoint?: string; provider_time?: string | null; received_at?: string; batch_id?: string; raw_hash?: string; fallback_used?: boolean; quality_status?: string; batch_status?: string; lag_seconds?: number; freshness_status?: string; order_book_status?: string }>;
+  total?: number;
+  page?: number;
+  page_size?: number;
+  has_more?: boolean;
+  observed_only?: boolean;
+  research_readiness?: string;
+  tradable?: boolean;
+  order_created?: boolean;
+  source?: string;
+  source_version?: string;
+}
+
 export interface EquityCurvePoint {
   id?: number;
   record_time?: string;
@@ -912,6 +926,10 @@ export function useMarketQuoteBatches(page = 1, pageSize = 20) {
     () => get<MarketQuoteBatchListData>("/stock/market/batches", { page, page_size: pageSize }),
     `market-quote-batches-v2:p${page}:s${pageSize}`,
   );
+}
+
+export function useObservedQuotes(page = 1, pageSize = 50) {
+  return useReadOnlyDisplay<ObservedQuoteListData>(() => get<ObservedQuoteListData>("/stock/quotes", { page, page_size: pageSize }), `market-observed-quotes-v1:p${page}:s${pageSize}`);
 }
 
 export function useExecutionStatus() {
