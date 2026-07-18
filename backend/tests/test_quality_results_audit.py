@@ -14,6 +14,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 from app.api import data  # noqa: E402
+from app.api import rules  # noqa: E402
 from app.core.auth import route_access  # noqa: E402
 from app.data.certification import DataCertificationService  # noqa: E402
 from app.data.quality_validator import KlineQualityValidator  # noqa: E402
@@ -190,6 +191,16 @@ class QualityResultAuditTests(unittest.TestCase):
         self.assertFalse(response.data["tradable"])
         self.assertIn("jsonb_each", db.sql[0])
         self.assertIn("ORDER BY validation.trading_date DESC", db.sql[1])
+
+    def test_calendar_route_is_read_only_and_does_not_use_weekday_fallback(self):
+        route = next(item for item in rules.router.routes if item.path == "/trading-calendar")
+        self.assertEqual(route.methods, {"GET"})
+        db = _Db([_Result(one={"total": 1, "confirmed": 1, "unresolved": 0, "coverage_from": None, "coverage_to": None}), _Result(rows=[])])
+        with patch("app.api.rules.get_db", return_value=_DbContext(db)):
+            response = asyncio.run(rules.list_trading_calendar(exchange=None, date_from=None, date_to=None, status=None, page=1, page_size=50))
+        self.assertEqual(route_access("GET", "/api/v1/rules/trading-calendar").scope, "market:read")
+        self.assertEqual(response.data["source"], "market.trading_calendar")
+        self.assertIn("ORDER BY calendar.trading_date DESC, calendar.exchange", db.sql[1])
 
 
 if __name__ == "__main__":
