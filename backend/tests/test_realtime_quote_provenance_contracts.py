@@ -53,7 +53,7 @@ class _BatchDbContext:
 
 class RealtimeQuoteProvenanceContractTests(unittest.TestCase):
     def test_quote_provenance_routes_are_read_only(self):
-        expected = ("/market/status", "/market/batches", "/quotes")
+        expected = ("/market/status", "/market/batches", "/quotes", "/liquidity")
         for path in expected:
             route = next(item for item in stock.router.routes if item.path == path)
             self.assertEqual(route.methods, {"GET"})
@@ -145,6 +145,54 @@ class RealtimeQuoteProvenanceContractTests(unittest.TestCase):
         self.assertEqual(db.params[0]["market"], "SZ")
         self.assertEqual(db.params[0]["board"], "主板")
         self.assertEqual(db.params[0]["freshness_status"], "fresh")
+        self.assertIn("DISTINCT ON (quote.stock_code)", db.sql[0])
+        self.assertIn("market.quote_provenance", db.sql[1])
+        self.assertIn("ORDER BY quote_time DESC, stock_code ASC", db.sql[1])
+        self.assertFalse(
+            any(
+                operation in statement.upper()
+                for statement in db.sql
+                for operation in ("INSERT", "UPDATE", "DELETE")
+            )
+        )
+
+    def test_observed_liquidity_marks_amount_unverified_and_uses_server_pagination(self):
+        db = _BatchDb(
+            2,
+            [
+                {
+                    "stock_code": "000001",
+                    "quote_time": "2026-07-18T10:00:00+08:00",
+                    "volume": 120000,
+                    "volume_unit": "shares",
+                    "amount": 1250000,
+                    "amount_unit": "not_recorded",
+                    "amount_status": "unverified",
+                    "batch_id": "batch-1",
+                    "raw_hash": "b" * 64,
+                    "fallback_used": False,
+                    "quality_status": "pass",
+                }
+            ],
+        )
+        with patch("app.api.stock.get_db", return_value=_BatchDbContext(db)):
+            response = asyncio.run(
+                stock.list_observed_liquidity(
+                    stock_code="000001", market="sz", board="主板",
+                    freshness_status="fresh", page=2, page_size=1,
+                )
+            )
+
+        payload = response.data
+        self.assertEqual(payload["total"], 2)
+        self.assertTrue(payload["observed_only"])
+        self.assertFalse(payload["amount_research_eligible"])
+        self.assertEqual(payload["liquidity_conclusion"], "not_granted")
+        self.assertEqual(payload["items"][0]["volume_unit"], "shares")
+        self.assertEqual(payload["items"][0]["amount_status"], "unverified")
+        self.assertEqual(db.params[0]["market"], "SZ")
+        self.assertIn("quote.amount", db.sql[0])
+        self.assertIn("'not_recorded' AS amount_unit", db.sql[0])
         self.assertIn("DISTINCT ON (quote.stock_code)", db.sql[0])
         self.assertIn("market.quote_provenance", db.sql[1])
         self.assertIn("ORDER BY quote_time DESC, stock_code ASC", db.sql[1])

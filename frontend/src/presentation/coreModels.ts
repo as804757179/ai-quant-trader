@@ -437,6 +437,22 @@ export interface ObservedQuoteListData {
   source_version?: string;
 }
 
+export interface ObservedLiquidityListData {
+  items?: Array<{ stock_code?: string; market?: string | null; board?: string | null; quote_time?: string; period?: string; volume?: number | null; volume_unit?: string; volume_status?: string; amount?: number | null; amount_unit?: string; amount_status?: string; provider?: string; source?: string; fetch_endpoint?: string; received_at?: string; batch_id?: string; raw_hash?: string; quality_status?: string; freshness_status?: string }>;
+  total?: number;
+  page?: number;
+  page_size?: number;
+  has_more?: boolean;
+  observed_only?: boolean;
+  research_readiness?: string;
+  amount_research_eligible?: boolean;
+  liquidity_conclusion?: string;
+  tradable?: boolean;
+  order_created?: boolean;
+  source?: string;
+  source_version?: string;
+}
+
 export interface EquityCurvePoint {
   id?: number;
   record_time?: string;
@@ -930,6 +946,10 @@ export function useMarketQuoteBatches(page = 1, pageSize = 20) {
 
 export function useObservedQuotes(page = 1, pageSize = 50) {
   return useReadOnlyDisplay<ObservedQuoteListData>(() => get<ObservedQuoteListData>("/stock/quotes", { page, page_size: pageSize }), `market-observed-quotes-v1:p${page}:s${pageSize}`);
+}
+
+export function useObservedLiquidity(page = 1, pageSize = 50) {
+  return useReadOnlyDisplay<ObservedLiquidityListData>(() => get<ObservedLiquidityListData>("/stock/liquidity", { page, page_size: pageSize }), `market-observed-liquidity-v1:p${page}:s${pageSize}`);
 }
 
 export function useExecutionStatus() {

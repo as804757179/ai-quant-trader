@@ -344,6 +344,110 @@ async def list_observed_quotes(
     )
 
 
+@router.get("/liquidity")
+async def list_observed_liquidity(
+    stock_code: str | None = Query(None),
+    market: str | None = Query(None),
+    board: str | None = Query(None),
+    freshness_status: str | None = Query(None, pattern="^(fresh|stale)$"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    """只读返回每只证券最新已观察成交量与成交额记录及 provenance。"""
+    now = datetime.now(ZoneInfo("Asia/Shanghai"))
+    threshold_seconds = max(
+        60,
+        int(settings.DATA_CACHE_TTL_QUOTE) * 3,
+        int(settings.DATA_SYNC_INTERVAL_REALTIME) * 3,
+    )
+    filters = [
+        "provenance.quality_status = 'pass'",
+        "provenance.fallback_used = FALSE",
+        "batch.status IN ('success', 'partial')",
+    ]
+    params: dict[str, Any] = {
+        "now": now,
+        "fresh_cutoff": now - timedelta(seconds=threshold_seconds),
+        "limit": page_size,
+        "offset": (page - 1) * page_size,
+    }
+    if stock_code:
+        filters.append("quote.stock_code = :stock_code")
+        params["stock_code"] = stock_code.strip().upper()
+    if market:
+        filters.append("stock.market = :market")
+        params["market"] = market.strip().upper()
+    if board:
+        filters.append("stock.board = :board")
+        params["board"] = board.strip()
+    if freshness_status:
+        filters.append(
+            "CASE WHEN quote.time >= :fresh_cutoff THEN 'fresh' ELSE 'stale' END = :freshness_status"
+        )
+        params["freshness_status"] = freshness_status
+    where_clause = " AND ".join(filters)
+    latest_liquidity_cte = f"""
+        WITH latest_liquidity AS (
+            SELECT DISTINCT ON (quote.stock_code)
+                   quote.stock_code, stock.market, stock.board, quote.time AS quote_time,
+                   quote.volume, quote.amount,
+                   'realtime_snapshot' AS period,
+                   'shares' AS volume_unit,
+                   CASE WHEN quote.volume IS NULL THEN 'not_recorded' ELSE 'observed' END AS volume_status,
+                   'not_recorded' AS amount_unit,
+                   CASE WHEN quote.amount IS NULL THEN 'not_recorded' ELSE 'unverified' END AS amount_status,
+                   provenance.provider, provenance.source, provenance.fetch_endpoint,
+                   provenance.provider_time, provenance.fetched_at, provenance.received_at,
+                   provenance.batch_id::text AS batch_id, provenance.raw_hash,
+                   provenance.fallback_used, provenance.quality_status,
+                   provenance.collector_version, provenance.normalizer_version,
+                   batch.status AS batch_status,
+                   GREATEST(0, EXTRACT(EPOCH FROM (:now - quote.time)))::bigint AS lag_seconds,
+                   CASE WHEN quote.time >= :fresh_cutoff THEN 'fresh' ELSE 'stale' END AS freshness_status
+            FROM market.quotes AS quote
+            INNER JOIN market.quote_provenance AS provenance
+                ON provenance.stock_code = quote.stock_code
+               AND provenance.quote_time = quote.time
+            INNER JOIN market.quote_batches AS batch ON batch.batch_id = provenance.batch_id
+            LEFT JOIN fundamental.stocks AS stock ON stock.code = quote.stock_code
+            WHERE {where_clause}
+            ORDER BY quote.stock_code, quote.time DESC, provenance.received_at DESC
+        )
+    """
+    async with get_db() as db:
+        total_result = await db.execute(text(f"{latest_liquidity_cte} SELECT COUNT(*) FROM latest_liquidity"), params)
+        total = int(total_result.scalar() or 0)
+        result = await db.execute(
+            text(
+                f"""
+                {latest_liquidity_cte}
+                SELECT * FROM latest_liquidity
+                ORDER BY quote_time DESC, stock_code ASC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            params,
+        )
+        items = [dict(row) for row in result.mappings().all()]
+    return ok(
+        {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "has_more": params["offset"] + len(items) < total,
+            "observed_only": True,
+            "research_readiness": "not_granted",
+            "amount_research_eligible": False,
+            "liquidity_conclusion": "not_granted",
+            "tradable": False,
+            "order_created": False,
+            "source": "market.quotes + market.quote_provenance + market.quote_batches",
+            "source_version": "market-observed-liquidity-v1",
+        }
+    )
+
+
 @router.post("/sync-universe", status_code=202)
 async def sync_stock_universe(
     request: Request,
