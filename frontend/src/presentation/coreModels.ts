@@ -626,7 +626,7 @@ export interface TradingCalendarListData {
 }
 
 export interface TradingRuleListData {
-  items?: Array<{ rule_type?: string; exchange?: string; board?: string; security_status?: string; effective_from?: string; effective_to?: string | null; value?: string | number | boolean; source_name?: string; source_reference?: string; rule_version?: string; source_hash?: string | null; source_hash_status?: string; parse_status?: string }>;
+  items?: Array<{ rule_type?: string; exchange?: string; board?: string; security_status?: string; effective_from?: string; effective_to?: string | null; value?: string | number | boolean; direction?: string; source_name?: string; source_reference?: string; rule_version?: string; source_hash?: string | null; source_hash_status?: string; parse_status?: string }>;
   total?: number; page?: number; page_size?: number; has_more?: boolean;
   registry_version?: string; tradable?: boolean;
 }
@@ -718,6 +718,10 @@ export function useTradingCalendar(page = 1, pageSize = 50) {
 
 export function useTradingRules(page = 1, pageSize = 50) {
   return useReadOnlyDisplay<TradingRuleListData>(() => get<TradingRuleListData>("/rules/trading", { page, page_size: pageSize }), `trading-rules-v1:p${page}:s${pageSize}`);
+}
+
+export function useFeeRules(page = 1, pageSize = 50) {
+  return useReadOnlyDisplay<TradingRuleListData>(() => get<TradingRuleListData>("/rules/fees", { page, page_size: pageSize }), `fee-rules-v1:p${page}:s${pageSize}`);
 }
 
 export function useOverviewModel() {
