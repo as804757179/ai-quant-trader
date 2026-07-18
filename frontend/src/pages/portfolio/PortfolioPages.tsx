@@ -1,6 +1,6 @@
 import type { TableProps } from "antd";
 import { pendingState } from "../../presentation/readOnlyApi";
-import { usePortfolioSummary } from "../../presentation/coreModels";
+import { usePortfolioPositions, usePortfolioSummary } from "../../presentation/coreModels";
 import type { SectionMetric } from "../shared/SectionPage";
 import SectionPage from "../shared/SectionPage";
 
@@ -34,7 +34,9 @@ export function AccountPage() {
 }
 
 export function PositionsPage() {
-  return <PortfolioStaticPage title="持仓与可用" subtitle="总持仓、可用持仓、成本、T+1 与零股状态" relatedId="portfolio:positions" tableTitle="持仓可用性明细" emptyDescription="持仓查询接口待接入" columns={[{ title: "证券代码", dataIndex: "primary", width: 160 }, { title: "总持仓", dataIndex: "total", width: 150 }, { title: "可用持仓", dataIndex: "available", width: 160 }, { title: "已实现盈亏", dataIndex: "realized", width: 180 }, { title: "未实现盈亏", dataIndex: "unrealized", width: 180 }, { title: "费用", dataIndex: "fees", width: 150 }, { title: "对账状态", dataIndex: "reconciliation", width: 180 }]} metrics={[{ label: "持仓标的", value: "待接入", detail: "从订单回报和账务快照对账", tone: "review" }, { label: "可用持仓", value: "待接入", detail: "T+1 规则独立管理", tone: "review" }, { label: "零股余额", value: "待接入", detail: "只允许一次性卖出", tone: "review" }, { label: "超过持仓卖出", value: "拒绝", detail: "不得创建超卖订单", tone: "reject" }]} auditItems={[{ label: "总量与可用", value: "分离", detail: "买入当日可用数量需遵循 T+1", tone: "info" }, { label: "零股政策", value: "受控", detail: "禁止拆分零股卖出", tone: "info" }, { label: "成本口径", value: "待接入", detail: "需要多笔会计基线对账", tone: "review" }]} note="持仓页面不会用研究 K 线或页面演示数据替代实际订单、成交和账务记录。" />;
+  const state = usePortfolioPositions(); const positions = state.data ?? []; const known = state.kind === "live" || state.kind === "empty";
+  const rows: PortfolioRow[] = positions.map((item, index) => ({ key: item.stock_code ?? String(index), primary: item.stock_code ?? "未记录", total: String(item.total_qty ?? "未记录"), available: String(item.available_qty ?? "未记录"), realized: "未记录", unrealized: String(item.unrealized_pnl ?? "估值不可用"), fees: "未记录", reconciliation: item.valuation_freshness ?? "未记录" }));
+  return <SectionPage title="持仓与可用" subtitle="总持仓、可用持仓与合格报价估值状态" relatedId="portfolio:positions" provenance={state.provenance} metadataStatusText="只读持仓 · 不释放 T+1 · 不以记录价回退估值" statusLabel={known ? "已接入（只读）" : state.message} statusTone={known ? "info" : "review"} metrics={[{ label: "持仓标的", value: known ? positions.length : "状态未知", detail: "当前服务端返回数量", tone: known ? "info" : "review" }, { label: "可用持仓", value: "原样展示", detail: "不由页面释放 T+1", tone: "info" }, { label: "报价估值", value: "仅合格新鲜报价", detail: "缺失或过期保持不可用", tone: "review" }, { label: "超过持仓卖出", value: "拒绝", detail: "页面不创建超卖订单", tone: "reject" }]} tableTitle="持仓可用性明细" columns={[{ title: "证券代码", dataIndex: "primary", width: 160 }, { title: "总持仓", dataIndex: "total", width: 150 }, { title: "可用持仓", dataIndex: "available", width: 160 }, { title: "未实现盈亏", dataIndex: "unrealized", width: 180 }, { title: "估值状态", dataIndex: "reconciliation", width: 180 }]} tableData={rows} tableSearchEnabled={false} rowKey="key" emptyDescription={state.message} auditTitle="账务与数据边界" auditItems={[{ label: "总量与可用", value: "分离", detail: "页面不释放 T+1 可用数量", tone: "info" }, { label: "估值回退", value: "禁止", detail: "不把记录价伪装为当前估值", tone: "reject" }, { label: "费用与已实现盈亏", value: "未记录", detail: "接口未提供时不补造", tone: "review" }]} note="持仓页面只读展示账务持仓与合格报价估值，不执行交易或修改任何持仓状态。" />;
 }
 
 export function TodayPnlPage() {

@@ -30,6 +30,19 @@ export interface PortfolioSnapshot {
   source_version?: string;
 }
 
+export interface PortfolioPosition {
+  stock_code?: string;
+  name?: string;
+  total_qty?: number;
+  available_qty?: number;
+  frozen_qty?: number;
+  avg_cost?: number | null;
+  market_value?: number | null;
+  unrealized_pnl?: number | null;
+  valuation_freshness?: string;
+  price_source?: string;
+}
+
 export interface RiskDashboardData {
   mode?: string;
   portfolio?: PortfolioSnapshot;
@@ -737,6 +750,10 @@ export function useSecurityStatus(page = 1, pageSize = 50) {
 
 export function usePortfolioSummary() {
   return useReadOnlyDisplay<PortfolioSnapshot>(() => get<PortfolioSnapshot>("/portfolio/summary", { mode: "simulation" }), "portfolio-summary-v1");
+}
+
+export function usePortfolioPositions() {
+  return useReadOnlyDisplay<PortfolioPosition[]>(() => get<PortfolioPosition[]>("/portfolio/positions", { mode: "simulation" }), "portfolio-positions-v1");
 }
 
 export function useOverviewModel() {

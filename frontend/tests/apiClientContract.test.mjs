@@ -144,3 +144,9 @@ test("账户总览页面复用只读快照且不伪造资金或对账差异", as
   assert.match(models, /get<PortfolioSnapshot>\("\/portfolio\/summary", \{ mode: "simulation" \}\)/);
   assert.match(page, /usePortfolioSummary\(\)/); assert.match(page, /不伪造初始资金或对账差异/); assert.match(page, /接口未提供时不补造/);
 });
+
+test("持仓页面保留 T+1 可用数量与估值不可用状态", async () => {
+  const [models, page] = await Promise.all([readFile(new URL("../src/presentation/coreModels.ts", import.meta.url), "utf8"), readFile(new URL("../src/pages/portfolio/PortfolioPages.tsx", import.meta.url), "utf8")]);
+  assert.match(models, /get<PortfolioPosition\[]>\("\/portfolio\/positions", \{ mode: "simulation" \}\)/);
+  assert.match(page, /usePortfolioPositions\(\)/); assert.match(page, /不释放 T\+1/); assert.match(page, /不以记录价回退估值/);
+});
