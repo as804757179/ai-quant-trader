@@ -75,3 +75,23 @@ test("Certified Store 只读取认证血缘且不把认证显示为研究准入"
   assert.match(page, /Certification 不传播为 Research Readiness/);
   assert.doesNotMatch(page, /pendingState\(/);
 });
+
+test("数据批次和质量页面使用服务端分页的只读认证接口", async () => {
+  const [models, batchesPage, qualityPage] = await Promise.all([
+    readFile(new URL("../src/presentation/coreModels.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/pages/data/DataBatchesPage.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/pages/data/DataQualityPage.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(models, /export function useCertificationBatches\(page = 1, pageSize = 50\)/);
+  assert.match(models, /get<CertificationBatchListData>\("\/data\/certification-batches", \{ page, page_size: pageSize \}\)/);
+  assert.match(models, /export function useQualityResults\(page = 1, pageSize = 50\)/);
+  assert.match(models, /get<QualityResultListData>\("\/data\/quality-results", \{ page, page_size: pageSize \}\)/);
+  assert.match(batchesPage, /useCertificationBatches\(page, pageSize\)/);
+  assert.match(qualityPage, /useQualityResults\(page, pageSize\)/);
+  assert.match(batchesPage, /tablePagination=/);
+  assert.match(qualityPage, /tablePagination=/);
+  assert.match(qualityPage, /历史未记录批次不会伪造明细/);
+  assert.doesNotMatch(batchesPage, /pendingState\(/);
+  assert.doesNotMatch(qualityPage, /pendingState\(/);
+});

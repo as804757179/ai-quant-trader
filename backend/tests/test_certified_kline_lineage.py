@@ -198,9 +198,12 @@ class CertifiedKlineLineageTests(unittest.TestCase):
             response = asyncio.run(
                 data.list_certification_batches(
                     provider=None,
+                    source=None,
                     period=None,
                     stock_code=None,
                     status=None,
+                    date_from=None,
+                    date_to=None,
                     page=1,
                     page_size=1,
                 )

@@ -499,6 +499,78 @@ export interface CertifiedKlineLineageData {
   source_version?: string;
 }
 
+export interface CertificationBatchItem {
+  batch_id?: string;
+  stock_code?: string | null;
+  provider?: string;
+  source?: string;
+  period?: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  fetch_time?: string | null;
+  total_rows?: number;
+  accepted_rows?: number;
+  rejected_rows?: number;
+  quality_score?: number | null;
+  status?: string;
+  reject_reason?: string | null;
+  importer_version?: string;
+}
+
+export interface CertificationBatchListData {
+  items?: CertificationBatchItem[];
+  total?: number;
+  page?: number;
+  page_size?: number;
+  has_more?: boolean;
+  summary?: {
+    certified?: number;
+    rejected?: number;
+    failed?: number;
+    latest_fetch_time?: string | null;
+  };
+  research_readiness?: string;
+  tradable?: boolean;
+  order_created?: boolean;
+  source_version?: string;
+}
+
+export interface QualityResultItem {
+  quality_result_id?: string;
+  batch_id?: string;
+  rule_code?: string;
+  rule_version?: string;
+  audit_scope?: string;
+  result?: string;
+  reject_reason?: string | null;
+  input_hash?: string;
+  created_at?: string | null;
+  stock_code?: string | null;
+  provider?: string;
+  source?: string;
+  period?: string;
+  fetch_time?: string | null;
+  importer_version?: string;
+}
+
+export interface QualityResultListData {
+  items?: QualityResultItem[];
+  total?: number;
+  page?: number;
+  page_size?: number;
+  has_more?: boolean;
+  summary?: {
+    passed?: number;
+    failed?: number;
+    not_evaluated?: number;
+    latest_evaluated_at?: string | null;
+  };
+  research_readiness?: string;
+  tradable?: boolean;
+  order_created?: boolean;
+  source_version?: string;
+}
+
 type ApiLoader<T> = () => Promise<APIResponse<T>>;
 
 export function useReadOnlyDisplay<T>(
@@ -549,6 +621,20 @@ export function useCertifiedKlineLineage(page = 1, pageSize = 50) {
       page_size: pageSize,
     }),
     `certified-kline-lineage-v1:raw:p${page}:s${pageSize}`,
+  );
+}
+
+export function useCertificationBatches(page = 1, pageSize = 50) {
+  return useReadOnlyDisplay<CertificationBatchListData>(
+    () => get<CertificationBatchListData>("/data/certification-batches", { page, page_size: pageSize }),
+    `certification-batches-v1:p${page}:s${pageSize}`,
+  );
+}
+
+export function useQualityResults(page = 1, pageSize = 50) {
+  return useReadOnlyDisplay<QualityResultListData>(
+    () => get<QualityResultListData>("/data/quality-results", { page, page_size: pageSize }),
+    `quality-results-v1:p${page}:s${pageSize}`,
   );
 }
 

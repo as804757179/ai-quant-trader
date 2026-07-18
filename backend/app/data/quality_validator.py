@@ -10,12 +10,21 @@ class QualityResult:
     passed: bool
     score: float
     reasons: list[str] = field(default_factory=list)
+    rule_results: list["QualityRuleResult"] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class QualityRuleResult:
+    rule_code: str
+    result: str
+    reject_reason: str | None = None
 
 
 class KlineQualityValidator:
     """Pure validation for one import batch before certification."""
 
     REQUIRED = ("stock_code", "period", "time", "open", "high", "low", "close", "volume", "amount")
+    RULE_VERSION = "kline-quality-v1"
 
     def validate_rows(
         self,
@@ -51,7 +60,41 @@ class KlineQualityValidator:
             reasons.append("daily bars must normalize to 15:00")
         unique = list(dict.fromkeys(reasons))
         score = max(0.0, 100.0 - min(100.0, 20.0 * len(unique)))
-        return QualityResult(passed=not unique, score=score, reasons=unique)
+        return QualityResult(
+            passed=not unique,
+            score=score,
+            reasons=unique,
+            rule_results=self._rule_results(rows, unique, hours),
+        )
+
+    @classmethod
+    def _rule_results(
+        cls,
+        rows: list[dict[str, Any]],
+        reasons: list[str],
+        hours: set[int],
+    ) -> list[QualityRuleResult]:
+        def result_for(rule_code: str, matched: list[str], *, evaluated: bool = True) -> QualityRuleResult:
+            if not evaluated:
+                return QualityRuleResult(rule_code, "not_evaluated")
+            failures = [reason for reason in reasons if reason in matched or any(reason.startswith(prefix) for prefix in matched)]
+            return QualityRuleResult(rule_code, "fail" if failures else "pass", "; ".join(failures) or None)
+
+        row_rules_evaluated = bool(rows)
+        return [
+            result_for("rows_present", ["rows are required"]),
+            result_for("provider_identified", ["provider is required"]),
+            result_for("source_identified", ["source is required"]),
+            result_for("synthetic_source_rejected", ["synthetic data cannot be certified"]),
+            result_for("required_fields", ["missing "], evaluated=row_rules_evaluated),
+            result_for("ohlc_validity", ["invalid OHLC"], evaluated=row_rules_evaluated),
+            result_for("volume_positive", ["volume must be positive"], evaluated=row_rules_evaluated),
+            result_for("amount_positive", ["amount must be positive"], evaluated=row_rules_evaluated),
+            result_for("timestamp_format", ["invalid time"], evaluated=row_rules_evaluated),
+            result_for("numeric_format", ["invalid numeric value"], evaluated=row_rules_evaluated),
+            result_for("natural_day_uniqueness", ["duplicate natural-day kline"], evaluated=row_rules_evaluated),
+            result_for("daily_bar_close_time", ["daily bars must normalize to 15:00"], evaluated=bool(hours)),
+        ]
 
     def _validate_row(self, row: dict[str, Any]) -> list[str]:
         reasons = [f"missing {name}" for name in self.REQUIRED if row.get(name) is None or row.get(name) == ""]

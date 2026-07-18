@@ -48,6 +48,7 @@ class DataCertificationService:
     ) -> tuple[str, QualityResult]:
         result = self.validate_batch(rows, provider=provider, source=source, is_synthetic=is_synthetic)
         batch_id = uuid.uuid4().hex
+        input_hash = raw_hash or self._input_hash(rows)
         dates = [self._date_of(row.get("time")) for row in rows if self._date_of(row.get("time"))]
         await db.execute(
             text("""
@@ -72,7 +73,46 @@ class DataCertificationService:
                 "stock_code": stock_code,
             },
         )
+        await self._record_quality_results(db, batch_id=batch_id, input_hash=input_hash, quality=result)
         return batch_id, result
+
+    @staticmethod
+    def _input_hash(rows: list[dict[str, Any]]) -> str:
+        return hashlib.sha256(json.dumps(rows, sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest()
+
+    async def _record_quality_results(
+        self,
+        db: AsyncSession,
+        *,
+        batch_id: str,
+        input_hash: str,
+        quality: QualityResult,
+    ) -> None:
+        await db.execute(
+            text(
+                """
+                INSERT INTO market.data_quality_results
+                (quality_result_id, batch_id, rule_code, rule_version, audit_scope,
+                 result, reject_reason, input_hash)
+                VALUES
+                (:quality_result_id, :batch_id, :rule_code, :rule_version, :audit_scope,
+                 :result, :reject_reason, :input_hash)
+                """
+            ),
+            [
+                {
+                    "quality_result_id": uuid.uuid4().hex,
+                    "batch_id": batch_id,
+                    "rule_code": rule.rule_code,
+                    "rule_version": self.validator.RULE_VERSION,
+                    "audit_scope": "batch",
+                    "result": rule.result,
+                    "reject_reason": rule.reject_reason,
+                    "input_hash": input_hash,
+                }
+                for rule in quality.rule_results
+            ],
+        )
 
     async def record_provenance(
         self, db: AsyncSession, rows: list[dict[str, Any]], *, batch_id: str, provider: str, source: str,
