@@ -157,6 +157,81 @@ async def list_system_alerts(
     )
 
 
+@router.get("/jobs")
+async def list_system_jobs(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    """只读返回已审计的异步任务，不调度、停止或重试任务。"""
+    params = {"limit": page_size, "offset": (page - 1) * page_size}
+    async with get_db() as db:
+        summary_result = await db.execute(
+            text(
+                """
+                SELECT COUNT(*) AS total,
+                       COUNT(*) FILTER (WHERE status IN ('queued', 'retry_wait', 'cancel_requested')) AS pending,
+                       COUNT(*) FILTER (WHERE status = 'running') AS running,
+                       COUNT(*) FILTER (WHERE status IN ('failed', 'blocked')) AS failed_or_blocked,
+                       MAX(updated_at) AS latest_updated_at
+                FROM audit.async_jobs
+                """
+            )
+        )
+        summary = dict(summary_result.mappings().one())
+        result = await db.execute(
+            text(
+                """
+                SELECT job_id::text, job_type, status, progress, error_code,
+                       retry_count, max_retries, next_retry_at, created_at, started_at,
+                       finished_at, updated_at, last_stage, operation_approval_id::text
+                FROM audit.async_jobs
+                ORDER BY updated_at DESC, job_id DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            params,
+        )
+        items = [dict(row) for row in result.mappings().all()]
+
+    execution_status = build_execution_status()
+    total = int(summary["total"] or 0)
+    return ok(
+        {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "has_more": params["offset"] + len(items) < total,
+            "summary": {
+                "pending": int(summary["pending"] or 0),
+                "running": int(summary["running"] or 0),
+                "failed_or_blocked": int(summary["failed_or_blocked"] or 0),
+                "latest_updated_at": (
+                    summary["latest_updated_at"].isoformat()
+                    if summary["latest_updated_at"]
+                    else None
+                ),
+            },
+            "scheduler": {
+                "registration_status": "not_observed",
+                "registration_source": "worker.celery_app.beat_schedule",
+                "runtime_status": "not_observed",
+                "timezone": "Asia/Shanghai",
+            },
+            "business_release": {
+                "status": "not_granted",
+                "all_release_locks_closed": execution_status["all_release_locks_closed"],
+                "release_locks": execution_status["release_locks"],
+            },
+            "research_readiness": "not_granted",
+            "tradable": False,
+            "order_created": False,
+            "source": "audit.async_jobs + scheduler declaration metadata",
+            "source_version": "system-jobs-v1",
+        }
+    )
+
+
 @router.get("/health")
 async def get_system_health():
     """只读汇总当前请求可观察到的基础设施、数据资格和发布锁状态。"""

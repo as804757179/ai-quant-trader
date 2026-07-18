@@ -226,6 +226,22 @@ export interface SystemAlertListData {
   source_version?: string;
 }
 
+export interface SystemJobListData {
+  items?: Array<{ job_id?: string; job_type?: string; status?: string; progress?: number; error_code?: string | null; retry_count?: number; max_retries?: number; next_retry_at?: string | null; created_at?: string; started_at?: string | null; finished_at?: string | null; updated_at?: string; last_stage?: string | null; operation_approval_id?: string | null }>;
+  total?: number;
+  page?: number;
+  page_size?: number;
+  has_more?: boolean;
+  summary?: { pending?: number; running?: number; failed_or_blocked?: number; latest_updated_at?: string | null };
+  scheduler?: { registration_status?: string; registration_source?: string; runtime_status?: string; timezone?: string };
+  business_release?: { status?: string; release_locks?: ReleaseLock[]; all_release_locks_closed?: boolean };
+  research_readiness?: string;
+  tradable?: boolean;
+  order_created?: boolean;
+  source?: string;
+  source_version?: string;
+}
+
 export interface RiskExposureData extends PortfolioSnapshot {
   mode?: string;
   positions?: Array<{
@@ -983,6 +999,10 @@ export function useSystemHealth() {
 
 export function useSystemAlerts(page = 1, pageSize = 50) {
   return useReadOnlyDisplay<SystemAlertListData>(() => get<SystemAlertListData>("/system/alerts", { page, page_size: pageSize }), `system-alerts-v1:p${page}:s${pageSize}`);
+}
+
+export function useSystemJobs(page = 1, pageSize = 50) {
+  return useReadOnlyDisplay<SystemJobListData>(() => get<SystemJobListData>("/system/jobs", { page, page_size: pageSize }), `system-jobs-v1:p${page}:s${pageSize}`);
 }
 
 export function useExecutionStatus() {

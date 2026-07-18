@@ -149,6 +149,55 @@ class SystemHealthContractTests(unittest.TestCase):
         self.assertEqual(route.methods, {"GET"})
         self.assertEqual(route_access("GET", "/api/v1/system/alerts").scope, "system:metrics.read")
 
+    def test_system_jobs_are_read_only_and_use_server_pagination(self):
+        db = _Db(
+            _Result(
+                {
+                    "total": 2,
+                    "pending": 1,
+                    "running": 0,
+                    "failed_or_blocked": 1,
+                    "latest_updated_at": datetime(2026, 7, 18, tzinfo=timezone.utc),
+                }
+            ),
+            _Result(
+                [
+                    {
+                        "job_id": "job-1",
+                        "job_type": "backtest",
+                        "status": "failed",
+                        "progress": 80,
+                    }
+                ]
+            ),
+        )
+        with patch("app.api.system.get_db", return_value=_DbContext(db)):
+            response = asyncio.run(system.list_system_jobs(page=2, page_size=1))
+
+        payload = response.data
+        self.assertEqual(payload["total"], 2)
+        self.assertEqual(payload["summary"]["failed_or_blocked"], 1)
+        self.assertEqual(payload["items"][0]["job_id"], "job-1")
+        self.assertEqual(payload["scheduler"]["registration_status"], "not_observed")
+        self.assertEqual(payload["scheduler"]["runtime_status"], "not_observed")
+        self.assertFalse(payload["tradable"])
+        self.assertFalse(payload["order_created"])
+        self.assertIn("audit.async_jobs", db.sql[0])
+        self.assertIn("ORDER BY updated_at DESC, job_id DESC", db.sql[1])
+        self.assertEqual(db.params[1], {"limit": 1, "offset": 1})
+        self.assertFalse(
+            any(
+                f"{operation} " in statement.upper()
+                for statement in db.sql
+                for operation in ("INSERT", "UPDATE", "DELETE")
+            )
+        )
+
+    def test_system_jobs_route_requires_metrics_scope(self):
+        route = next(item for item in system.router.routes if item.path == "/jobs")
+        self.assertEqual(route.methods, {"GET"})
+        self.assertEqual(route_access("GET", "/api/v1/system/jobs").scope, "system:metrics.read")
+
 
 if __name__ == "__main__":
     unittest.main()
