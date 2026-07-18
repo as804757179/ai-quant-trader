@@ -58,6 +58,31 @@ export interface RiskAlert {
   message?: string;
   created_at?: string;
   ts?: string;
+  action_taken?: string;
+  trigger_value?: number | null;
+  threshold?: number | null;
+  is_resolved?: boolean;
+  resolved_at?: string | null;
+  resolved_by?: string | null;
+}
+
+export interface RiskAlertListData {
+  items?: RiskAlert[];
+  total?: number;
+  page?: number;
+  page_size?: number;
+  source?: string;
+  source_version?: string;
+}
+
+export interface RiskAlertSummaryData {
+  available_total?: number;
+  critical?: number;
+  error?: number;
+  warning?: number;
+  info?: number;
+  source?: string;
+  source_version?: string;
 }
 
 export interface TradeModeData {
@@ -762,6 +787,14 @@ export function useEquityCurve() {
 
 export function useRiskDashboard() {
   return useReadOnlyDisplay<RiskDashboardData>(() => get<RiskDashboardData>("/risk/dashboard", { mode: "simulation" }), "risk-dashboard-v1");
+}
+
+export function useRiskAlerts(page = 1, pageSize = 50) {
+  return useReadOnlyDisplay<RiskAlertListData>(() => get<RiskAlertListData>("/risk/alerts", { page, page_size: pageSize }), `risk-alerts-v1:p${page}:s${pageSize}`);
+}
+
+export function useRiskAlertsSummary() {
+  return useReadOnlyDisplay<RiskAlertSummaryData>(() => get<RiskAlertSummaryData>("/risk/alerts/summary", { limit: 100 }), "risk-alerts-summary-v1");
 }
 
 export function useOverviewModel() {

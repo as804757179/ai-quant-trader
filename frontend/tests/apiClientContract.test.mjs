@@ -162,3 +162,10 @@ test("风险总览页面使用只读聚合且不将未知状态显示为通过",
   assert.match(models, /get<RiskDashboardData>\("\/risk\/dashboard", \{ mode: "simulation" \}\)/);
   assert.match(page, /useRiskDashboard\(\)/); assert.match(page, /unknown\/stale 不显示为通过/); assert.match(page, /不从缺失状态推断通过/); assert.doesNotMatch(page, /pendingState\("风险总览/);
 });
+
+test("风险事件页面读取持久化风险告警且不与系统告警混用", async () => {
+  const [models, page] = await Promise.all([readFile(new URL("../src/presentation/coreModels.ts", import.meta.url), "utf8"), readFile(new URL("../src/pages/risk/RiskPages.tsx", import.meta.url), "utf8")]);
+  assert.match(models, /get<RiskAlertListData>\("\/risk\/alerts", \{ page, page_size: pageSize \}\)/);
+  assert.match(models, /get<RiskAlertSummaryData>\("\/risk\/alerts\/summary", \{ limit: 100 \}\)/);
+  assert.match(page, /useRiskAlerts\(page, pageSize\)/); assert.match(page, /不与系统告警混用/); assert.match(page, /页面不改变解决状态/); assert.doesNotMatch(page, /pendingState\("风险事件/);
+});

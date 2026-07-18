@@ -1,5 +1,6 @@
 import type { TableProps } from "antd";
-import { useRiskDashboard } from "../../presentation/coreModels";
+import { useState } from "react";
+import { useRiskAlerts, useRiskAlertsSummary, useRiskDashboard } from "../../presentation/coreModels";
 import { pendingState } from "../../presentation/readOnlyApi";
 import SectionPage from "../shared/SectionPage";
 
@@ -16,6 +17,8 @@ export function RiskOverviewPage() {
 }
 
 export function RiskEventsPage() {
-  const state = pendingState("风险事件接口待接入", "risk-events-ui-v1");
-  return <SectionPage title="风险事件" subtitle="风险规则命中、拒绝原因、处置、关联决策与订单的事件归档" relatedId="risk:events" provenance={state.provenance} metrics={[{ label: "风险事件", value: "待接入", detail: "需有 event_id 与关联 ID", tone: "review" }, { label: "已拒绝动作", value: "待接入", detail: "拒绝不得静默丢失", tone: "review" }, { label: "待复核事件", value: "待接入", detail: "不使用绿色表示未处理", tone: "review" }, { label: "风险自动下单", value: "禁止", detail: "风控只能审核与拒绝", tone: "reject" }]} tableTitle="风险事件归档" columns={columns} rowKey="key" emptyDescription={state.message} auditTitle="事件责任" auditItems={[{ label: "风险事件", value: "独立归档", detail: "不与系统告警或平台审计混用", tone: "info" }, { label: "拒绝原因", value: "必须", detail: "关联规则版本与输入快照", tone: "info" }, { label: "人工处置", value: "待接入", detail: "必须记录审批与完成时间", tone: "review" }]} note="风险事件页将业务风险与基础设施告警分开；风险记录不可被页面操作删除或修改。" />;
+  const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(50); const state = useRiskAlerts(page, pageSize); const summary = useRiskAlertsSummary(); const total = state.data?.total;
+  const known = (state.kind === "live" || state.kind === "empty") && typeof total === "number";
+  const rows: RiskRow[] = (state.data?.items ?? []).map((item, index) => ({ key: item.id ?? String(index), riskId: item.id ?? "未记录", detectedAt: item.created_at ?? "未记录", scope: item.alert_type ?? item.type ?? "未记录", ruleVersion: "未记录", action: item.action_taken ?? "未记录", status: item.is_resolved === true ? "已解决" : item.is_resolved === false ? "未解决" : "未记录" }));
+  return <SectionPage title="风险事件" subtitle="持久化风险规则命中与处置记录" relatedId="risk:events" provenance={{ ...state.provenance, sourceVersion: state.data?.source_version ?? state.provenance.sourceVersion }} metadataStatusText="只读风险事件 · 服务端分页 · 不与系统告警混用" statusLabel={known ? "已接入（只读）" : state.message} statusTone={known ? "info" : "review"} metrics={[{ label: "风险事件", value: known ? total : "状态未知", detail: "risk.risk_events 持久化记录", tone: known ? "info" : "review" }, { label: "严重", value: summary.data?.critical ?? "未记录", detail: "当前汇总窗口", tone: "review" }, { label: "错误", value: summary.data?.error ?? "未记录", detail: "当前汇总窗口", tone: "review" }, { label: "风险自动下单", value: "禁止", detail: "页面不创建或修改订单", tone: "reject" }]} tableTitle="风险事件归档（服务端分页）" columns={columns} tableData={rows} tablePagination={known ? { current: state.data?.page ?? page, pageSize: state.data?.page_size ?? pageSize, total, onChange: (nextPage, nextPageSize) => { setPage(nextPageSize === pageSize ? nextPage : 1); setPageSize(nextPageSize); } } : undefined} tableSearchEnabled={false} rowKey="key" emptyDescription={state.message} auditTitle="事件责任" auditItems={[{ label: "风险事件", value: "独立归档", detail: "不与系统告警或平台审计混用", tone: "info" }, { label: "规则版本", value: "未记录", detail: "告警接口未提供时不补造", tone: "review" }, { label: "人工处置", value: "只读记录", detail: "页面不改变解决状态", tone: "reject" }]} note="风险事件页只读展示持久化风险告警；它不创建、删除或解决风险事件，也不创建订单。" />;
 }
