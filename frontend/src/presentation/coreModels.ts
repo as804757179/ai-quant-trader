@@ -480,6 +480,7 @@ export interface ResearchEvidence {
   publisher_name?: string;
   source_published_at?: string | null;
   source_published_date?: string | null;
+  received_at?: string | null;
   available_at?: string | null;
   availability_basis?: string;
   raw_hash?: string;
