@@ -180,6 +180,17 @@ class QualityResultAuditTests(unittest.TestCase):
         self.assertFalse(response.data["tradable"])
         self.assertIn("ORDER BY blocker.trading_date DESC NULLS LAST, blocker.blocker_id DESC", db.sql[1])
 
+    def test_provider_validation_route_reads_audit_rows_without_fallback(self):
+        route = next(item for item in data.router.routes if item.path == "/provider-validations")
+        self.assertEqual(route.methods, {"GET"})
+        db = _Db([_Result(one={"total": 1, "passed": 0, "review": 0, "failed": 1, "latest_reviewed_at": None}), _Result(rows=[{"stock_code": "000001.SZ", "field": "close", "conclusion": "FAIL"}])])
+        with patch("app.api.data.get_db", return_value=_DbContext(db)):
+            response = asyncio.run(data.list_provider_validations(stock_code=None, date_from=None, date_to=None, field=None, conclusion=None, page=1, page_size=50))
+        self.assertEqual(response.data["items"][0]["conclusion"], "FAIL")
+        self.assertFalse(response.data["tradable"])
+        self.assertIn("jsonb_each", db.sql[0])
+        self.assertIn("ORDER BY validation.trading_date DESC", db.sql[1])
+
 
 if __name__ == "__main__":
     unittest.main()

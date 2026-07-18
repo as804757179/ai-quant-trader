@@ -106,3 +106,11 @@ test("阻塞归因页面不推断 Readiness 因果", async () => {
   assert.match(page, /不推断 Readiness 因果/);
   assert.doesNotMatch(page, /pendingState\(/);
 });
+
+test("Provider 验证页面只读展示交叉验证记录", async () => {
+  const [models, page] = await Promise.all([readFile(new URL("../src/presentation/coreModels.ts", import.meta.url), "utf8"), readFile(new URL("../src/pages/data/ProviderValidationPage.tsx", import.meta.url), "utf8")]);
+  assert.match(models, /get<ProviderValidationListData>\("\/data\/provider-validations", \{ page, page_size: pageSize \}\)/);
+  assert.match(page, /useProviderValidations\(page, pageSize\)/);
+  assert.match(page, /不作为运行时 fallback/);
+  assert.doesNotMatch(page, /pendingState\(/);
+});

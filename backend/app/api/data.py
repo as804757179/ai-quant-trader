@@ -343,3 +343,88 @@ async def list_data_blockers(
             "source_version": "data-blockers-v1",
         }
     )
+
+
+@router.get("/provider-validations")
+async def list_provider_validations(
+    stock_code: str | None = Query(None, min_length=1, max_length=12),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    field: str | None = Query(None, min_length=1, max_length=64),
+    conclusion: str | None = Query(None, pattern="^(PASS|REVIEW|FAIL)$"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    filters = ["1=1"]
+    params: dict[str, Any] = {"limit": page_size, "offset": (page - 1) * page_size}
+    if stock_code:
+        filters.append("validation.stock_code = :stock_code")
+        params["stock_code"] = stock_code.strip().upper()
+    if date_from:
+        filters.append("validation.trading_date >= :date_from")
+        params["date_from"] = date_from
+    if date_to:
+        filters.append("validation.trading_date <= :date_to")
+        params["date_to"] = date_to
+    if field:
+        filters.append("validation.field = :field")
+        params["field"] = field.strip()
+    if conclusion:
+        filters.append("validation.conclusion = :conclusion")
+        params["conclusion"] = conclusion
+    where_clause = " AND ".join(filters)
+    source_rows = """
+        SELECT review.run_id, review.stock_code, review.trading_date,
+               review.primary_provider, review.secondary_provider, review.result AS conclusion,
+               field.key AS field, field.value->>'primary' AS primary_value,
+               field.value->>'secondary' AS secondary_value,
+               field.value->>'absolute_difference' AS absolute_difference,
+               field.value->>'relative_difference' AS relative_difference,
+               field.value->>'tolerance' AS tolerance, field.value->>'passed' AS field_passed,
+               review.endpoint_versions, review.comparison, review.reviewed_at
+        FROM market.provider_validation_reviews AS review
+        CROSS JOIN LATERAL jsonb_each(COALESCE(review.comparison->'fields', '{}'::jsonb)) AS field
+        UNION ALL
+        SELECT review.run_id, review.stock_code, review.trading_date,
+               review.primary_provider, review.secondary_provider, review.result,
+               'provider_fetch', NULL, NULL, NULL, NULL, NULL, NULL,
+               review.endpoint_versions, review.comparison, review.reviewed_at
+        FROM market.provider_validation_reviews AS review
+        WHERE review.comparison ? 'provider_fetch_error'
+    """
+    async with get_db() as db:
+        summary_result = await db.execute(
+            text(
+                f"""
+                SELECT COUNT(*) AS total,
+                       COUNT(*) FILTER (WHERE validation.conclusion = 'PASS') AS passed,
+                       COUNT(*) FILTER (WHERE validation.conclusion = 'REVIEW') AS review,
+                       COUNT(*) FILTER (WHERE validation.conclusion = 'FAIL') AS failed,
+                       MAX(validation.reviewed_at) AS latest_reviewed_at
+                FROM ({source_rows}) AS validation
+                WHERE {where_clause}
+                """
+            ),
+            params,
+        )
+        summary = dict(summary_result.mappings().one())
+        result = await db.execute(
+            text(
+                f"""
+                SELECT * FROM ({source_rows}) AS validation
+                WHERE {where_clause}
+                ORDER BY validation.trading_date DESC, validation.stock_code, validation.field
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            params,
+        )
+        items = [dict(row) for row in result.mappings().all()]
+    total = int(summary["total"] or 0)
+    return ok({
+        "items": items, "total": total, "page": page, "page_size": page_size,
+        "has_more": (page - 1) * page_size + len(items) < total,
+        "summary": {"passed": int(summary["passed"] or 0), "review": int(summary["review"] or 0), "failed": int(summary["failed"] or 0), "latest_reviewed_at": summary["latest_reviewed_at"]},
+        "research_readiness": "not_granted", "tradable": False, "order_created": False,
+        "source": "market.provider_validation_reviews", "source_version": "provider-validations-v1",
+    })

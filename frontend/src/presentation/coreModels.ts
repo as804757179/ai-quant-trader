@@ -598,6 +598,26 @@ export interface DataBlockerListData {
   source_version?: string;
 }
 
+export interface ProviderValidationItem {
+  stock_code?: string;
+  trading_date?: string;
+  field?: string;
+  absolute_difference?: string | null;
+  relative_difference?: string | null;
+  conclusion?: string;
+}
+
+export interface ProviderValidationListData {
+  items?: ProviderValidationItem[];
+  total?: number;
+  page?: number;
+  page_size?: number;
+  has_more?: boolean;
+  summary?: { passed?: number; review?: number; failed?: number };
+  tradable?: boolean;
+  source_version?: string;
+}
+
 type ApiLoader<T> = () => Promise<APIResponse<T>>;
 
 export function useReadOnlyDisplay<T>(
@@ -669,6 +689,13 @@ export function useDataBlockers(page = 1, pageSize = 50) {
   return useReadOnlyDisplay<DataBlockerListData>(
     () => get<DataBlockerListData>("/data/blockers", { page, page_size: pageSize }),
     `data-blockers-v1:p${page}:s${pageSize}`,
+  );
+}
+
+export function useProviderValidations(page = 1, pageSize = 50) {
+  return useReadOnlyDisplay<ProviderValidationListData>(
+    () => get<ProviderValidationListData>("/data/provider-validations", { page, page_size: pageSize }),
+    `provider-validations-v1:p${page}:s${pageSize}`,
   );
 }
 
