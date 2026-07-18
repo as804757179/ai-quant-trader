@@ -631,6 +631,13 @@ export interface TradingRuleListData {
   registry_version?: string; tradable?: boolean;
 }
 
+export interface SecurityStatusListData {
+  items?: Array<{ run_id?: string; stock_code?: string; effective_from?: string; effective_to?: string; status?: string; evidence_source?: string; evidence_version?: string; resolution_status?: string; price_limit_rule?: string | null; price_tick?: string | null; source_hash?: string | null; source_hash_status?: string }>;
+  total?: number; page?: number; page_size?: number; has_more?: boolean;
+  summary?: { unresolved?: number; provider_missing?: number; latest_reviewed_at?: string | null };
+  tradable?: boolean; source_version?: string;
+}
+
 type ApiLoader<T> = () => Promise<APIResponse<T>>;
 
 export function useReadOnlyDisplay<T>(
@@ -722,6 +729,10 @@ export function useTradingRules(page = 1, pageSize = 50) {
 
 export function useFeeRules(page = 1, pageSize = 50) {
   return useReadOnlyDisplay<TradingRuleListData>(() => get<TradingRuleListData>("/rules/fees", { page, page_size: pageSize }), `fee-rules-v1:p${page}:s${pageSize}`);
+}
+
+export function useSecurityStatus(page = 1, pageSize = 50) {
+  return useReadOnlyDisplay<SecurityStatusListData>(() => get<SecurityStatusListData>("/market/security-status", { page, page_size: pageSize }), `security-status-v1:p${page}:s${pageSize}`);
 }
 
 export function useOverviewModel() {

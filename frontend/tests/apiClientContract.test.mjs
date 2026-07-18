@@ -132,3 +132,9 @@ test("费用规则页面只展示已登记费项并排除滑点模型", async ()
   assert.match(models, /get<TradingRuleListData>\("\/rules\/fees", \{ page, page_size: pageSize \}\)/);
   assert.match(page, /useFeeRules\(page, pageSize\)/); assert.match(page, /滑点模型/); assert.match(page, /没有官方费用规则登记/); assert.doesNotMatch(page, /pendingState\(/);
 });
+
+test("证券状态页面不把审核状态推断为涨跌停规则", async () => {
+  const [models, page] = await Promise.all([readFile(new URL("../src/presentation/coreModels.ts", import.meta.url), "utf8"), readFile(new URL("../src/pages/market/MarketLimitPage.tsx", import.meta.url), "utf8")]);
+  assert.match(models, /get<SecurityStatusListData>\("\/market\/security-status", \{ page, page_size: pageSize \}\)/);
+  assert.match(page, /useSecurityStatus\(page, pageSize\)/); assert.match(page, /不按代码前缀推断规则/); assert.match(page, /状态审核不等于涨跌停规则解析/); assert.doesNotMatch(page, /pendingState\(/);
+});
