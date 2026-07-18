@@ -517,6 +517,25 @@ export interface ObservedLiquidityListData {
   source_version?: string;
 }
 
+export interface MarketClassificationListData {
+  items?: Array<{ classification_kind?: string; classification_name?: string; stock_count?: number; snapshot_updated_at?: string | null; data_semantics?: string; provider?: string; source?: string; dataset_version?: string | null; fetched_at?: string | null; effective_from?: string | null; effective_to?: string | null; quality_status?: string; pit_capable?: boolean; historical_research_usable?: boolean; backtest_usable?: boolean }>;
+  total?: number;
+  page?: number;
+  page_size?: number;
+  has_more?: boolean;
+  summary?: { stock_count?: number; latest_snapshot_updated_at?: string | null };
+  data_semantics?: string;
+  observed_only?: boolean;
+  pit_capable?: boolean;
+  historical_research_usable?: boolean;
+  backtest_usable?: boolean;
+  research_readiness?: string;
+  tradable?: boolean;
+  order_created?: boolean;
+  source?: string;
+  source_version?: string;
+}
+
 export interface EquityCurvePoint {
   id?: number;
   record_time?: string;
@@ -973,6 +992,10 @@ export function useFeeRules(page = 1, pageSize = 50) {
 
 export function useSecurityStatus(page = 1, pageSize = 50) {
   return useReadOnlyDisplay<SecurityStatusListData>(() => get<SecurityStatusListData>("/market/security-status", { page, page_size: pageSize }), `security-status-v1:p${page}:s${pageSize}`);
+}
+
+export function useIndustryClassifications(page = 1, pageSize = 50) {
+  return useReadOnlyDisplay<MarketClassificationListData>(() => get<MarketClassificationListData>("/market/industry-classifications", { page, page_size: pageSize }), `market-industry-current-snapshot-v1:p${page}:s${pageSize}`);
 }
 
 export function useResearchEvidence(evidenceType: "announcement" | "news" | "financial_report", page = 1, pageSize = 50) {
