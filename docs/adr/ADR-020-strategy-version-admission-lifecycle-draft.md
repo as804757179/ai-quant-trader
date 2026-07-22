@@ -1,6 +1,6 @@
 # ADR-020：策略版本准入生命周期补全草案
 
-状态：Draft，未批准、未实施。  
+状态：Draft，未批准、未实施。
 日期：2026-07-22。
 
 ## 已确认缺口
@@ -12,8 +12,8 @@
 
 ## 拟议状态机
 
-策略主体：`inactive -> active -> inactive`。主体 inactive 时不得解析可用策略快照。  
-版本：`submitted -> approved -> active -> (revoked | expired)`；`rejected` 为终态。  
+策略主体：`inactive -> active -> inactive`。主体 inactive 时不得解析可用策略快照。
+版本：`submitted -> approved -> active -> (revoked | expired)`；`rejected` 为终态。
 只有同时满足“唯一 active 主体、唯一 active head、approved、enabled、参数和双 Hash 有效、有效期覆盖运行时点、未撤销”的版本，才可被未来准入服务解析。
 
 ## 最小追加式迁移草案（非迁移文件）

@@ -1,8 +1,8 @@
 # P3-1A Replay Input Profile 与 PIT/Hash 契约草案
 
-状态：Draft，未登记、未激活。  
-Profile：`P3_REPLAY_DUAL_MA_RAW_OHLCV_V1`。  
-Policy version：`p3-replay-dual-ma-input-v1`。  
+状态：Draft，未登记、未激活。
+Profile：`P3_REPLAY_DUAL_MA_RAW_OHLCV_V1`。
+Policy version：`p3-replay-dual-ma-input-v1`。
 唯一用途：`p3_shadow_replay`。
 
 ## 输入字段
