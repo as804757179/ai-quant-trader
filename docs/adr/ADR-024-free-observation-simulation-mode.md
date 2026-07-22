@@ -10,6 +10,8 @@
 
 每个实际接入的免费来源必须记录 provider、source、条款链接及版本、访问账户权限范围、抓取时间、dataset/batch/row Hash 与已知限制。未能证明自动化、本地存储或二次处理权限的来源不得自动调用；不得通过抓取受限网站、绕过登录、反爬或服务条款来补足数据。
 
+免费日线产物必须记录 Provider 实际返回行的覆盖清单（范围、行数和股票代码集合 Hash），并明确标记 `coverage_status=unverified`。该清单不是全 A 股、上市状态、可交易性或交易日历完整性的证明。
+
 ## 影响
 
 - `FREE_OBSERVATION_SIMULATION_V1` 的输出只能声明为免费观测与非正式模拟，不得宣称真实历史 replay、可信收益、正式 Paper、模拟实盘或阶段 C/D 通过。

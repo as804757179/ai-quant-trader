@@ -15,6 +15,7 @@ TUSHARE_DATASET_VERSION = "daily-api-v1"
 TUSHARE_TERMS_URL = "https://tushare.pro/document/1?doc_id=405"
 TUSHARE_HTTP_ENDPOINT = "http://api.tushare.pro"
 FREE_OBSERVATION_MODE = "free_observation"
+FREE_OBSERVATION_UNIVERSE_SCOPE = "provider_response_rows_for_trade_date"
 
 
 class FreeObservationError(ValueError):
@@ -60,6 +61,15 @@ class FreeObservationDailyBatch:
             "available_at_status": self.available_at_status,
             "lineage_status": self.lineage_status,
             "external_request_count": self.external_request_count,
+            "universe_manifest": {
+                "scope": FREE_OBSERVATION_UNIVERSE_SCOPE,
+                "coverage_status": "unverified",
+                "returned_row_count": len(self.rows),
+                "stock_code_hash": hashlib.sha256(
+                    json.dumps(sorted(str(row["ts_code"]) for row in self.rows), ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+                ).hexdigest(),
+                "not_proven": ["all_a_share_coverage", "listing_status", "tradability", "calendar_completeness"],
+            },
             "blocked_from": ["certified_store", "formal_p3", "formal_p4", "p5", "trade_execution"],
         }
 

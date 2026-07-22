@@ -57,6 +57,12 @@ class TushareFreeObservationTests(unittest.TestCase):
         self.assertEqual(first.lineage_status, "unverified")
         self.assertEqual(first.batch_hash, second.batch_hash)
         self.assertEqual(first.rows[0]["row_hash"], second.rows[0]["row_hash"])
+        manifest = first.as_dict()["universe_manifest"]
+        self.assertEqual(manifest["scope"], "provider_response_rows_for_trade_date")
+        self.assertEqual(manifest["coverage_status"], "unverified")
+        self.assertEqual(manifest["returned_row_count"], 1)
+        self.assertEqual(len(manifest["stock_code_hash"]), 64)
+        self.assertIn("all_a_share_coverage", manifest["not_proven"])
         self.assertEqual(first.as_dict()["blocked_from"], ["certified_store", "formal_p3", "formal_p4", "p5", "trade_execution"])
 
     def test_rejects_provider_error_and_invalid_row(self) -> None:
