@@ -11,6 +11,10 @@ from app.shadow.contracts import ShadowContractError
 
 
 class ShadowRepository:
+    @staticmethod
+    def _page(page: int, page_size: int) -> tuple[int, int]:
+        return max(1, page), max(1, min(200, page_size))
+
     async def create_run(
         self,
         db: AsyncSession,
@@ -72,6 +76,107 @@ class ShadowRepository:
         )
         row = result.mappings().first()
         return dict(row) if row else None
+
+    async def list_runs(
+        self,
+        db: AsyncSession,
+        *,
+        status: str | None,
+        page: int,
+        page_size: int,
+    ) -> tuple[list[dict[str, Any]], int]:
+        page, page_size = self._page(page, page_size)
+        params = {"status": status, "limit": page_size, "offset": (page - 1) * page_size}
+        where = "WHERE (:status IS NULL OR status = :status)"
+        total = await db.scalar(text(f"SELECT COUNT(*) FROM shadow.runs {where}"), params)
+        result = await db.execute(
+            text(
+                f"""
+                SELECT run_id::text AS run_id, status, block_code, data_mode, not_realtime,
+                       realtime_data_approved, provider, source, dataset_version,
+                       information_cutoff, input_snapshot_hash, result_hash,
+                       tradable, order_created, order_count, order_service_calls,
+                       execution_service_calls, capital_write_count, position_write_count,
+                       release_locks_before, release_locks_after, created_at, completed_at
+                FROM shadow.runs {where}
+                ORDER BY created_at DESC, run_id DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            params,
+        )
+        return [dict(row) for row in result.mappings().all()], int(total or 0)
+
+    async def get_run(self, db: AsyncSession, *, run_id: UUID) -> dict[str, Any] | None:
+        result = await db.execute(
+            text(
+                """
+                SELECT run_id::text AS run_id, idempotency_key, request_hash, status, block_code,
+                       data_mode, not_realtime, realtime_data_approved, provider, source,
+                       dataset_version, license_evidence_ref, sample_reference_id, sample_hash,
+                       strategy_reference_id, strategy_hash, input_profile_reference_id,
+                       input_profile_hash, information_cutoff, input_snapshot_hash, result_hash,
+                       tradable, order_created, order_count, order_service_calls,
+                       execution_service_calls, capital_write_count, position_write_count,
+                       release_locks_before, release_locks_after, created_at, completed_at
+                FROM shadow.runs
+                WHERE run_id = CAST(:run_id AS uuid)
+                """
+            ),
+            {"run_id": str(run_id)},
+        )
+        row = result.mappings().first()
+        return dict(row) if row else None
+
+    async def list_decisions(
+        self, db: AsyncSession, *, run_id: UUID, page: int, page_size: int
+    ) -> tuple[list[dict[str, Any]], int]:
+        page, page_size = self._page(page, page_size)
+        params = {"run_id": str(run_id), "limit": page_size, "offset": (page - 1) * page_size}
+        total = await db.scalar(
+            text("SELECT COUNT(*) FROM shadow.decisions WHERE run_id = CAST(:run_id AS uuid)"),
+            params,
+        )
+        result = await db.execute(
+            text(
+                """
+                SELECT decision_id::text AS decision_id, run_id::text AS run_id, stock_code,
+                       information_cutoff, decision_state, would_action, reason_code,
+                       decision_rule_hash, decision_dedup_key, evidence_hash,
+                       tradable, order_created, created_at
+                FROM shadow.decisions
+                WHERE run_id = CAST(:run_id AS uuid)
+                ORDER BY created_at DESC, decision_id DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            params,
+        )
+        return [dict(row) for row in result.mappings().all()], int(total or 0)
+
+    async def list_decision_evidence(
+        self, db: AsyncSession, *, decision_id: UUID
+    ) -> list[dict[str, Any]]:
+        result = await db.execute(
+            text(
+                """
+                SELECT evidence.decision_evidence_id::text AS decision_evidence_id,
+                       evidence.decision_id::text AS decision_id,
+                       evidence.input_batch_id::text AS input_batch_id,
+                       evidence.evidence_reference_id, evidence.evidence_hash,
+                       evidence.evidence_type, evidence.available_at, evidence.created_at,
+                       input.batch_id, input.raw_hash, input.provider_time, input.fetched_at,
+                       input.received_at, input.data_as_of
+                FROM shadow.decision_evidence AS evidence
+                LEFT JOIN shadow.run_input_batches AS input
+                    ON input.input_batch_id = evidence.input_batch_id
+                WHERE evidence.decision_id = CAST(:decision_id AS uuid)
+                ORDER BY evidence.created_at, evidence.decision_evidence_id
+                """
+            ),
+            {"decision_id": str(decision_id)},
+        )
+        return [dict(row) for row in result.mappings().all()]
 
     async def append_input_batch(
         self,

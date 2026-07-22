@@ -18,6 +18,7 @@ from app.api import (
     risk,
     rules,
     screener,
+    shadow,
     stock,
     strategy,
     system,
@@ -193,6 +194,7 @@ app.include_router(stock.router, prefix="/api/v1/stock", tags=["股票数据"])
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["认证"])
 app.include_router(ai.router, prefix="/api/v1/ai", tags=["AI分析"])
 app.include_router(screener.router, prefix="/api/v1/screener", tags=["选股"])
+app.include_router(shadow.router, prefix="/api/v1/shadow", tags=["P3-0 影子审计"])
 app.include_router(strategy.router, prefix="/api/v1/strategy", tags=["策略管理"])
 app.include_router(backtest.router, prefix="/api/v1/backtest", tags=["回测"])
 app.include_router(jobs.router, prefix="/api/v1/jobs", tags=["异步任务"])
