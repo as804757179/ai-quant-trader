@@ -131,6 +131,7 @@ class TushareFreeObservationClient:
         rows = tuple(self._row(fields, item) for item in items)
         if not rows:
             raise FreeObservationError("FREE_OBSERVATION_DATA_UNAVAILABLE", "免费观测日线响应为空")
+        self._validate_daily_rows(rows, trade_date)
         batch_hash = self._hash(
             {
                 "provider": TUSHARE_PROVIDER,
@@ -166,6 +167,21 @@ class TushareFreeObservationClient:
             raise FreeObservationError("FREE_OBSERVATION_RESPONSE_INVALID", "免费观测日线行缺少必要 OHLC 字段")
         payload["row_hash"] = cls._hash(payload)
         return payload
+
+    @staticmethod
+    def _validate_daily_rows(rows: tuple[dict[str, Any], ...], trade_date: date) -> None:
+        expected_trade_date = trade_date.strftime("%Y%m%d")
+        stock_codes: set[str] = set()
+        for row in rows:
+            if row["trade_date"] != expected_trade_date:
+                raise FreeObservationError(
+                    "FREE_OBSERVATION_TRADE_DATE_MISMATCH",
+                    "免费观测日线行交易日期与请求日期不一致",
+                )
+            stock_code = str(row["ts_code"])
+            if stock_code in stock_codes:
+                raise FreeObservationError("FREE_OBSERVATION_ROW_DUPLICATE", "免费观测日线存在重复股票行")
+            stock_codes.add(stock_code)
 
     @staticmethod
     def _hash(value: object) -> str:

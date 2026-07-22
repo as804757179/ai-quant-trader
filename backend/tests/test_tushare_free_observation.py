@@ -73,6 +73,17 @@ class TushareFreeObservationTests(unittest.TestCase):
         with self.assertRaisesRegex(FreeObservationError, "缺少必要 OHLC"):
             invalid.fetch_daily(trade_date=date(2026, 7, 22))
 
+    def test_rejects_wrong_trade_date_and_duplicate_stock_rows(self) -> None:
+        fields = ["ts_code", "trade_date", "open", "high", "low", "close"]
+        wrong_date = self._client({"code": 0, "data": {"fields": fields, "items": [["000001.SZ", "20260721", 10, 10, 10, 10]]}})
+        with self.assertRaises(FreeObservationError) as date_error:
+            wrong_date.fetch_daily(trade_date=date(2026, 7, 22))
+        self.assertEqual(date_error.exception.code, "FREE_OBSERVATION_TRADE_DATE_MISMATCH")
+        duplicate = self._client({"code": 0, "data": {"fields": fields, "items": [["000001.SZ", "20260722", 10, 10, 10, 10], ["000001.SZ", "20260722", 11, 11, 11, 11]]}})
+        with self.assertRaises(FreeObservationError) as duplicate_error:
+            duplicate.fetch_daily(trade_date=date(2026, 7, 22))
+        self.assertEqual(duplicate_error.exception.code, "FREE_OBSERVATION_ROW_DUPLICATE")
+
     def test_command_requires_confirmation_and_never_overwrites(self) -> None:
         script = BACKEND_ROOT / "scripts" / "fetch_free_observation_daily.py"
         base = [sys.executable, str(script), "--trade-date", "2026-07-22", "--output", "unused.json"]
