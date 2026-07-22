@@ -81,6 +81,15 @@ class ProviderReference:
                     "test 数据必须使用 test-only Provider 和许可证据",
                 )
         elif self.data_mode == "replay":
+            if (
+                self.provider.startswith("test:")
+                or self.source.startswith("test:")
+                or self.license_evidence_ref == "test-only"
+            ):
+                raise ShadowContractError(
+                    "P3_TEST_REFERENCE_OUTSIDE_TEST_MODE",
+                    "test-only Provider 不能用于 replay",
+                )
             if not self.not_realtime:
                 raise ShadowContractError(
                     "P3_REPLAY_NOT_REALTIME", "replay 数据不得标记为实时"

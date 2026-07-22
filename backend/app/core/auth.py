@@ -608,6 +608,7 @@ _READ_SCOPE_PREFIXES = (
     ("/api/v1/data", "market:read"),
     ("/api/v1/rules", "market:read"),
     ("/api/v1/market", "market:read"),
+    ("/api/v1/shadow", "market:read"),
     ("/api/v1/ai", "ai:read"),
     ("/api/v1/screener", "screener:read"),
     ("/api/v1/strategy", "strategy:read"),
