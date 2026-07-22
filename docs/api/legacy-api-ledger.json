@@ -202,8 +202,8 @@
   },
   "openapi_baselines": {
     "main_http": {
-      "path_count": 103,
-      "sha256": "bb800be8cc0d9a788f5c26b9ca72d289de999222e346025e08c911c982e9ab6c"
+      "path_count": 106,
+      "sha256": "e954a03e86ec5afe2d7fa38d1357d5bce0a47e542ea1eec82edd21761d1d1c59"
     },
     "internal_data_http": {
       "path_count": 12,
