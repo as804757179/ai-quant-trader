@@ -120,20 +120,7 @@ class LocalDevelopmentSingleOperatorException:
         self, db: AsyncSession, *, principal: Principal
     ) -> dict[str, Any]:
         await self.assert_active_actor(db, principal=principal)
-        existing = await db.execute(
-            text(
-                """
-                SELECT after_data->>'request_hash' AS request_hash
-                FROM audit.operation_logs
-                WHERE operation = 'STRATEGY_SINGLE_OPERATOR_EXCEPTION_AUTHORIZED'
-                  AND after_data->>'idempotency_key' = :idempotency_key
-                ORDER BY id DESC
-                LIMIT 1
-                """
-            ),
-            {"idempotency_key": self.idempotency_key},
-        )
-        row = existing.mappings().first()
+        row = await self._authorization_row(db)
         if row is not None:
             if row["request_hash"] != self.request_hash:
                 raise _error(
@@ -163,6 +150,37 @@ class LocalDevelopmentSingleOperatorException:
             },
         )
         return {"idempotent": False, **payload}
+
+    async def assert_authorized(self, db: AsyncSession) -> None:
+        row = await self._authorization_row(db)
+        if row is None:
+            raise _error(
+                "单人治理例外尚未登记审计授权",
+                "STRATEGY_SINGLE_OPERATOR_EXCEPTION_NOT_AUTHORIZED",
+                403,
+            )
+        if row["request_hash"] != self.request_hash:
+            raise _error(
+                "单人治理例外审计请求不一致",
+                "STRATEGY_SINGLE_OPERATOR_EXCEPTION_IDEMPOTENCY_CONFLICT",
+                409,
+            )
+
+    async def _authorization_row(self, db: AsyncSession) -> Any:
+        existing = await db.execute(
+            text(
+                """
+                SELECT after_data->>'request_hash' AS request_hash
+                FROM audit.operation_logs
+                WHERE operation = 'STRATEGY_SINGLE_OPERATOR_EXCEPTION_AUTHORIZED'
+                  AND after_data->>'idempotency_key' = :idempotency_key
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ),
+            {"idempotency_key": self.idempotency_key},
+        )
+        return existing.mappings().first()
 
     async def record_approval_use(
         self,

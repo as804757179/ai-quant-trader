@@ -400,6 +400,7 @@ class StrategyVersionGovernanceTests(unittest.TestCase):
             self.assertTrue(
                 run(exception.record_authorization(self.db, principal=self.submitter))["idempotent"]
             )
+            run(exception.assert_authorized(self.db))
             approved = run(
                 self.service.approve(
                     self.db,
