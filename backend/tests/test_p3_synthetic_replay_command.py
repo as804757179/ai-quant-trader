@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import json
+import tempfile
 from pathlib import Path
 import unittest
 
@@ -59,6 +61,40 @@ class SyntheticReplayCommandTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 1)
         self.assertIn("production", result.stderr)
+
+    def test_command_writes_new_audit_file_without_overwrite(self) -> None:
+        backend_root = Path(__file__).resolve().parents[1]
+        script = backend_root / "scripts" / "verify_synthetic_shadow_replay.py"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "synthetic-audit.json"
+            command = [
+                sys.executable,
+                str(script),
+                "--confirm-test-only",
+                "--output",
+                str(output_path),
+            ]
+            first = subprocess.run(
+                command,
+                cwd=backend_root,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(first.returncode, 0, first.stderr)
+            saved = json.loads(output_path.read_text(encoding="utf-8"))
+            self.assertRegex(saved["audit_report_hash"], r"^[0-9a-f]{64}$")
+            second = subprocess.run(
+                command,
+                cwd=backend_root,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(second.returncode, 2)
+            self.assertIn("拒绝覆盖", second.stderr)
 
 
 if __name__ == "__main__":

@@ -187,12 +187,26 @@ def main() -> int:
         action="store_true",
         help="Acknowledge that this command is test-only and never starts formal replay.",
     )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="Optional new JSON audit file; an existing file is never overwritten.",
+    )
     args = parser.parse_args()
     if not args.confirm_test_only:
         print("必须显式传入 --confirm-test-only；本命令不会启动正式 replay。", file=sys.stderr)
         return 2
     try:
-        print(json.dumps(build_verification_report(), ensure_ascii=False, indent=2, sort_keys=True))
+        serialized = json.dumps(build_verification_report(), ensure_ascii=False, indent=2, sort_keys=True)
+        if args.output is not None:
+            try:
+                with args.output.open("x", encoding="utf-8", newline="\n") as stream:
+                    stream.write(serialized)
+                    stream.write("\n")
+            except FileExistsError:
+                print(f"审计文件已存在，拒绝覆盖：{args.output}", file=sys.stderr)
+                return 2
+        print(serialized)
         return 0
     except Exception as exc:
         print(f"synthetic/test-only 验证失败（fail-closed）：{exc}", file=sys.stderr)
