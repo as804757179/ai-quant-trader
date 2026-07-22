@@ -2,7 +2,7 @@
   "ledger_version": "2026-07-18",
   "governance_plan": "docs/superpowers/specs/2026-07-16-legacy-api-clearance-and-new-api-entry-gate.md",
   "original_total_expected": 76,
-  "total_expected": 122,
+  "total_expected": 125,
   "consumer_registry": {
     "frontend.core_models": {
       "source": "frontend/src/presentation/coreModels.ts",
@@ -45,7 +45,7 @@
     "main_http": {
       "system": "backend",
       "transport": "http",
-      "expected_count": 106,
+      "expected_count": 109,
       "interfaces": [
         {"id": "backend.stock.market-status.get", "method": "GET", "path": "/api/v1/stock/market/status", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
         {"id": "backend.stock.market-batches.get", "method": "GET", "path": "/api/v1/stock/market/batches", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
@@ -76,6 +76,8 @@
 
         {"id": "backend.strategy.list.get", "method": "GET", "path": "/api/v1/strategy/list", "owner": "strategy", "risk_level": "read", "disposition": "compatibility", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_governed_config_contract", "review_resolution": "retain_compatibility"},
         {"id": "backend.strategy.runtime-status.get", "method": "GET", "path": "/api/v1/strategy/runtime-status", "owner": "strategy", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
+        {"id": "backend.strategy.admission-status.get", "method": "GET", "path": "/api/v1/strategy/{strategy_type}/admission-status", "owner": "strategy", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": ["P3 strategy admission remains blocked"], "verification": "read_only_route_and_fail_closed_contract"},
+        {"id": "backend.strategy.p3-replay-profile.get", "method": "GET", "path": "/api/v1/strategy/p3/replay-profile", "owner": "strategy", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": ["Profile remains draft and runner-disabled"], "verification": "read_only_route_and_profile_contract"},
         {"id": "backend.strategy.detail.get", "method": "GET", "path": "/api/v1/strategy/{strategy_type}", "owner": "strategy", "risk_level": "read", "disposition": "compatibility", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_governed_config_contract", "review_resolution": "retain_compatibility"},
         {"id": "backend.strategy.create.post", "method": "POST", "path": "/api/v1/strategy/create", "owner": "strategy", "risk_level": "admin", "disposition": "legacy_clearance_governance", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_authorization_contract", "review_resolution": "retain_pending_approval_submission", "introduced_for": "legacy_clearance", "authorization": "strategy:write + expected_revision"},
         {"id": "backend.strategy.update.post", "method": "POST", "path": "/api/v1/strategy/{strategy_type}/update", "owner": "strategy", "risk_level": "admin", "disposition": "legacy_clearance_governance", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": [], "verification": "route_and_runtime_authorization_contract", "review_resolution": "retain_pending_approval_submission", "introduced_for": "legacy_clearance", "authorization": "strategy:write + expected_revision"},
@@ -140,6 +142,7 @@
         {"id": "backend.research.exclusions.get", "method": "GET", "path": "/api/v1/research/exclusions", "owner": "research", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": ["risk_events_excluded"], "verification": "route_and_frontend_contract"},
         {"id": "backend.research.holdings-review.get", "method": "GET", "path": "/api/v1/research/holdings-review", "owner": "research", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": ["risk_association_not_recorded", "action_not_generated"], "verification": "route_and_frontend_contract"},
         {"id": "backend.data.certified-klines.get", "method": "GET", "path": "/api/v1/data/certified-klines", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
+        {"id": "backend.data.certified-lineage.get", "method": "GET", "path": "/api/v1/data/certified-lineage", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "no_repository_consumer", "consumers": [], "known_issues": ["Missing verified lineage remains unavailable"], "verification": "read_only_route_and_lineage_contract"},
         {"id": "backend.data.certification-batches.get", "method": "GET", "path": "/api/v1/data/certification-batches", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
         {"id": "backend.data.quality-results.get", "method": "GET", "path": "/api/v1/data/quality-results", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
         {"id": "backend.data.blockers.get", "method": "GET", "path": "/api/v1/data/blockers", "owner": "market_data", "risk_level": "read", "disposition": "keep", "lifecycle": "active", "consumer_state": "known", "consumers": ["frontend.core_models"], "known_issues": [], "verification": "route_and_frontend_contract"},
