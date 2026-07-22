@@ -74,6 +74,20 @@ class FreeObservationReviewTests(TestCase):
         with self.assertRaisesRegex(FreeObservationReviewError, "批次缺失"):
             FreeObservationReview.evaluate(candidate_document=candidate, artifacts=[self._artifact("2026-07-23", 11.0)])
 
+    def test_keeps_realization_pending_when_later_trade_date_was_fetched_before_candidate(self) -> None:
+        input_artifacts = [
+            self._artifact("2026-07-17", 10.0), self._artifact("2026-07-20", 10.0),
+            self._artifact("2026-07-21", 10.0), self._artifact("2026-07-22", 9.0),
+            self._artifact("2026-07-23", 8.0), self._artifact("2026-07-24", 12.0),
+        ]
+        input_artifacts[-1]["fetched_at"] = datetime(2026, 7, 30, 15, 5, tzinfo=timezone.utc).isoformat()
+        candidate = FreeObservationDualMaEvaluator.evaluate(artifacts=input_artifacts, strategy_snapshot=self.snapshot).as_dict()
+        report = FreeObservationReview.evaluate(
+            candidate_document=candidate,
+            artifacts=[*input_artifacts, self._artifact("2026-07-25", 13.0)],
+        )
+        self.assertEqual(report["review_items"][0]["outcome"], "REALIZATION_PENDING")
+
     def test_command_writes_new_review_file_and_rejects_production(self) -> None:
         input_artifacts = [
             self._artifact("2026-07-17", 10.0), self._artifact("2026-07-20", 10.0),

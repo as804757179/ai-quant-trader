@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from app.data.free_observation_dual_ma import (
@@ -56,8 +57,14 @@ class FreeObservationReview:
             action = candidate.get("would_action")
             if not isinstance(stock_code, str) or not isinstance(action, str):
                 raise FreeObservationReviewError("FREE_OBSERVATION_REVIEW_INVALID", "候选记录缺少股票或动作")
+            observed_at = cls._candidate_observed_at(candidate)
             baseline = cls._latest_row(indexed, candidate_hashes, stock_code)
-            realization = cls._first_later_row(indexed, stock_code, baseline["trade_date"] if baseline else None)
+            realization = cls._first_later_row(
+                indexed,
+                stock_code,
+                baseline["trade_date"] if baseline else None,
+                observed_at,
+            )
             items.append(cls._item(stock_code, action, baseline, realization))
         payload = {
             "candidate_result_hash": candidate_document["result_hash"],
@@ -110,8 +117,9 @@ class FreeObservationReview:
             batch_hash = hashes[0]
             if batch_hash in indexed:
                 raise FreeObservationReviewError("FREE_OBSERVATION_REVIEW_DUPLICATE", "复盘输入存在重复观测批次")
+            fetched_at = cls._fetched_at(artifact)
             indexed[batch_hash] = [
-                {"stock_code": stock_code, **row}
+                {"stock_code": stock_code, "fetched_at": fetched_at, **row}
                 for stock_code, rows in rows_by_stock.items()
                 for row in rows
             ]
@@ -126,7 +134,10 @@ class FreeObservationReview:
 
     @staticmethod
     def _first_later_row(
-        indexed: dict[str, list[dict[str, Any]]], stock_code: str, baseline_trade_date: str | None
+        indexed: dict[str, list[dict[str, Any]]],
+        stock_code: str,
+        baseline_trade_date: str | None,
+        candidate_observed_at: datetime,
     ) -> dict[str, Any] | None:
         if baseline_trade_date is None:
             return None
@@ -134,9 +145,33 @@ class FreeObservationReview:
             row
             for batch_rows in indexed.values()
             for row in batch_rows
-            if row["stock_code"] == stock_code and row["trade_date"] > baseline_trade_date
+            if (
+                row["stock_code"] == stock_code
+                and row["trade_date"] > baseline_trade_date
+                and row["fetched_at"] > candidate_observed_at
+            )
         ]
         return min(rows, key=lambda row: row["trade_date"]) if rows else None
+
+    @staticmethod
+    def _candidate_observed_at(candidate: dict[str, Any]) -> datetime:
+        try:
+            observed_at = datetime.fromisoformat(str(candidate["observed_at"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise FreeObservationReviewError("FREE_OBSERVATION_REVIEW_INVALID", "候选记录缺少有效 observed_at") from exc
+        if observed_at.tzinfo is None:
+            raise FreeObservationReviewError("FREE_OBSERVATION_REVIEW_INVALID", "候选 observed_at 必须包含时区")
+        return observed_at
+
+    @staticmethod
+    def _fetched_at(artifact: dict[str, Any]) -> datetime:
+        try:
+            fetched_at = datetime.fromisoformat(str(artifact["fetched_at"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise FreeObservationReviewError("FREE_OBSERVATION_REVIEW_INVALID", "观测批次缺少有效 fetched_at") from exc
+        if fetched_at.tzinfo is None:
+            raise FreeObservationReviewError("FREE_OBSERVATION_REVIEW_INVALID", "观测批次 fetched_at 必须包含时区")
+        return fetched_at
 
     @staticmethod
     def _item(
