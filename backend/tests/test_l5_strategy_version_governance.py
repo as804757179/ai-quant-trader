@@ -20,6 +20,8 @@ sys.path.insert(0, str(REPO_ROOT / "backend"))
 from app.api.strategy import StrategyCreateRequest, StrategyUpdateRequest
 from app.backtest.service import BacktestService, BacktestStrategyDisabled
 from app.core.auth import Principal, ROLE_SCOPES, route_access
+from app.core.config import settings
+from app.strategy.single_operator_exception import LocalDevelopmentSingleOperatorException
 from app.strategy.version_service import StrategyVersionError, StrategyVersionService
 
 
@@ -56,6 +58,7 @@ class _MemoryStrategyDb:
         self.versions: dict[int, dict] = {}
         self.approvals: dict[int, dict] = {}
         self.events: list[dict] = []
+        self.audit_logs: list[dict] = []
 
     def _version_for(self, strategy_id, version_number):
         for version in self.versions.values():
@@ -103,6 +106,27 @@ class _MemoryStrategyDb:
         values = dict(params or {})
         if "pg_advisory_xact_lock" in sql:
             return _Result()
+        if "FROM auth.principals" in sql:
+            return _Result({"principal_id": values["principal_id"]})
+        if "FROM audit.operation_logs" in sql:
+            matched = [
+                log for log in self.audit_logs
+                if log["operation"] == "STRATEGY_SINGLE_OPERATOR_EXCEPTION_AUTHORIZED"
+                and log["after_data"]["idempotency_key"] == values["idempotency_key"]
+            ]
+            return _Result([] if not matched else [{"request_hash": matched[-1]["after_data"]["request_hash"]}])
+        if "INSERT INTO audit.operation_logs" in sql:
+            self.audit_logs.append(
+                {
+                    "operation": (
+                        "STRATEGY_SINGLE_OPERATOR_EXCEPTION_AUTHORIZED"
+                        if "AUTHORIZED" in sql
+                        else "STRATEGY_SINGLE_OPERATOR_APPROVAL_EXCEPTION_USED"
+                    ),
+                    "after_data": json.loads(values["after_data"]),
+                }
+            )
+            return _Result(rowcount=1)
         if "FROM strategy.strategy_version_heads AS h" in sql:
             return _Result(self._state_rows())
         if "FROM strategy.strategies" in sql and "WHERE strategy_type = :strategy_type" in sql:
@@ -344,6 +368,69 @@ class StrategyVersionGovernanceTests(unittest.TestCase):
             "submitted",
             "approved",
         ])
+
+    def test_local_development_single_operator_exception_is_audited_and_scoped(self):
+        submitted = run(
+            self.service.submit(
+                self.db,
+                principal=self.submitter,
+                strategy_type="dual_ma",
+                expected_revision=0,
+                enabled=True,
+                params={},
+            )
+        )
+        with patch.object(settings, "APP_ENV", "development"), patch.object(
+            settings,
+            "DATABASE_URL",
+            "postgresql+asyncpg://test:test@127.0.0.1/test",
+        ):
+            exception = LocalDevelopmentSingleOperatorException.create(
+                principal=self.submitter,
+                reason="local development single-owner governance",
+                idempotency_key="local-single-operator-0001",
+            )
+            authorization = run(
+                exception.record_authorization(self.db, principal=self.submitter)
+            )
+            self.assertFalse(authorization["idempotent"])
+            self.assertTrue(authorization["single_operator_exception"])
+            self.assertFalse(authorization["separation_of_duties"])
+            self.assertEqual(authorization["environment"], "local_development")
+            self.assertTrue(
+                run(exception.record_authorization(self.db, principal=self.submitter))["idempotent"]
+            )
+            approved = run(
+                self.service.approve(
+                    self.db,
+                    principal=self.submitter,
+                    version_id=submitted["version_id"],
+                    single_operator_exception=exception,
+                )
+            )
+        self.assertEqual(approved["version_id"], submitted["version_id"])
+        self.assertEqual(self.db.heads[1]["active_version_id"], submitted["version_id"])
+        self.assertEqual(len(self.db.audit_logs), 2)
+        self.assertFalse(self.db.audit_logs[-1]["after_data"]["separation_of_duties"])
+        self.assertNotIn("INSERT INTO auth.principals", "\n".join(str(item) for item in self.db.audit_logs))
+
+    def test_single_operator_exception_rejects_nonlocal_environment(self):
+        for app_env, database_url in (
+            ("production", "postgresql+asyncpg://test:test@127.0.0.1/test"),
+            ("development", "postgresql+asyncpg://test:test@shared-db/test"),
+        ):
+            with patch.object(settings, "APP_ENV", app_env), patch.object(
+                settings, "DATABASE_URL", database_url
+            ):
+                with self.assertRaises(StrategyVersionError) as rejected:
+                    LocalDevelopmentSingleOperatorException.create(
+                        principal=self.submitter,
+                        reason="local development single-owner governance",
+                        idempotency_key="local-single-operator-0002",
+                    )
+            self.assertEqual(
+                rejected.exception.code, "STRATEGY_SINGLE_OPERATOR_EXCEPTION_NOT_LOCAL"
+            )
 
     def test_tampered_version_hash_fails_closed_before_approval(self):
         submitted = run(

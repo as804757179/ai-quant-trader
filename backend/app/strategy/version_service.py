@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.strategy.catalog import STRATEGY_CATALOG, get_strategy_meta
 from app.strategy.config_store import validate_strategy_params
+from app.strategy.single_operator_exception import LocalDevelopmentSingleOperatorException
 
 if TYPE_CHECKING:
     from app.core.auth import Principal
@@ -711,8 +712,12 @@ class StrategyVersionService:
         *,
         principal: Principal,
         version_id: int,
+        single_operator_exception: LocalDevelopmentSingleOperatorException | None = None,
     ) -> dict[str, Any]:
-        self._require_approver(principal)
+        if single_operator_exception is None:
+            self._require_approver(principal)
+        else:
+            await single_operator_exception.assert_active_actor(db, principal=principal)
         result = await db.execute(
             text(
                 """
@@ -739,10 +744,22 @@ class StrategyVersionService:
             raise StrategyVersionError(
                 "策略版本不处于待审批状态", "STRATEGY_VERSION_NOT_PENDING", 409
             )
-        if str(row.get("requester_principal_id")) == principal.principal_id:
+        if (
+            str(row.get("requester_principal_id")) == principal.principal_id
+            and single_operator_exception is None
+        ):
             raise StrategyVersionError(
                 "提交人不能审批自己的策略版本",
                 "STRATEGY_APPROVAL_SEPARATION",
+                403,
+            )
+        if (
+            single_operator_exception is not None
+            and str(row.get("requester_principal_id")) != principal.principal_id
+        ):
+            raise StrategyVersionError(
+                "单人治理例外只能用于同一提交主体",
+                "STRATEGY_SINGLE_OPERATOR_EXCEPTION_ACTOR_INVALID",
                 403,
             )
         if (
@@ -796,8 +813,20 @@ class StrategyVersionService:
                 "strategy_type": row["strategy_type"],
                 "version": row["version_number"],
                 "config_hash": row["config_hash"],
+                **(
+                    single_operator_exception.audit_payload()
+                    if single_operator_exception is not None
+                    else {}
+                ),
             },
         )
+        if single_operator_exception is not None:
+            await single_operator_exception.record_approval_use(
+                db,
+                principal=principal,
+                strategy_id=row["strategy_id"],
+                version_id=version_id,
+            )
         return {
             **self._base_entry(row["strategy_type"]),
             "strategy_id": row["strategy_id"],
