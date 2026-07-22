@@ -3,6 +3,7 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 from sqlalchemy import text
+from sqlalchemy import text
 
 from app.core.response import ok
 from app.data.certified_kline_repository import CertifiedKlineRepository
@@ -10,6 +11,21 @@ from app.db import get_db
 
 
 router = APIRouter()
+
+
+@router.get("/certified-lineage")
+async def list_certified_kline_lineage(
+    stock_code: str | None = Query(None), page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200)
+):
+    filters = ["1=1"]
+    params = {"limit": page_size, "offset": (page - 1) * page_size}
+    if stock_code:
+        filters.append("stock_code = :stock_code")
+        params["stock_code"] = stock_code.strip().upper()
+    async with get_db() as db:
+        rows = await db.execute(text(f"SELECT * FROM market.certified_kline_lineage WHERE {' AND '.join(filters)} ORDER BY created_at DESC, lineage_id DESC LIMIT :limit OFFSET :offset"), params)
+        items = [dict(row) for row in rows.mappings().all()]
+    return ok({"items": items, "total": len(items), "page": page, "page_size": page_size, "p3_replay_eligibility": "unavailable_or_unverified", "tradable": False, "order_created": False})
 
 
 @router.get("/certified-klines")

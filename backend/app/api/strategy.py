@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.logging import FEATURE_STRATEGY, get_logger
@@ -171,6 +172,49 @@ async def get_strategy(strategy_type: str):
     except SQLAlchemyError as exc:
         _raise_database_error(exc)
     return ok(item)
+
+
+@router.get("/{strategy_type}/admission-status")
+async def get_strategy_admission_status(strategy_type: str):
+    """Read lifecycle facts only; never activates or selects a strategy."""
+    try:
+        async with _database_context() as db:
+            result = await db.execute(text("""
+                SELECT s.id AS strategy_id, s.strategy_type, s.is_active,
+                       h.active_version_id, v.enabled, a.status AS approval_status,
+                       COALESCE(jsonb_agg(jsonb_build_object('event_type', e.event_type,
+                           'effective_at', e.effective_at, 'valid_until', e.valid_until)
+                           ORDER BY e.effective_at, e.event_id) FILTER (WHERE e.event_id IS NOT NULL), '[]'::jsonb) AS lifecycle_events
+                FROM strategy.strategies s
+                LEFT JOIN strategy.strategy_version_heads h ON h.strategy_id = s.id
+                LEFT JOIN strategy.strategy_versions v ON v.version_id = h.active_version_id
+                LEFT JOIN strategy.strategy_version_approvals a ON a.version_id = v.version_id
+                LEFT JOIN strategy.strategy_version_validity_events e ON e.version_id = v.version_id
+                WHERE s.strategy_type = :strategy_type
+                GROUP BY s.id, h.active_version_id, v.enabled, a.status
+                ORDER BY s.id
+            """), {"strategy_type": strategy_type})
+            items = [dict(row) for row in result.mappings().all()]
+    except SQLAlchemyError as exc:
+        _raise_database_error(exc)
+    return ok({"items": items, "admission_status": "blocked", "block_code": "P3_STRATEGY_VERSION_UNCONFIRMED", "tradable": False, "order_created": False})
+
+
+@router.get("/p3/replay-profile")
+async def get_p3_replay_profile_status():
+    try:
+        async with _database_context() as db:
+            row = (await db.execute(text("""
+                SELECT requirement_profile, required_fields, allowed_scopes, policy_version,
+                       enabled, status, contract
+                FROM market.research_requirement_profiles
+                WHERE requirement_profile = 'P3_REPLAY_DUAL_MA_RAW_OHLCV_V1'
+            """))).mappings().first()
+    except SQLAlchemyError as exc:
+        _raise_database_error(exc)
+    if row is None:
+        error("P3 replay Profile 未登记", "P3_PROFILE_NOT_REGISTERED", 404)
+    return ok({"item": dict(row), "runner_usable": False, "tradable": False, "order_created": False})
 
 
 @router.post("/{strategy_type}/update")
