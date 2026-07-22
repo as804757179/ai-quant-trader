@@ -158,6 +158,15 @@ class FreeObservationDualMaEvaluator:
                 raise FreeObservationEvaluationError("FREE_OBSERVATION_INPUT_INVALID", "观测批次缺少 fetched_at") from exc
             if fetched_at.tzinfo is None:
                 raise FreeObservationEvaluationError("FREE_OBSERVATION_INPUT_INVALID", "观测批次 fetched_at 必须包含时区")
+            try:
+                batch_trade_date = datetime.strptime(str(artifact["trade_date"]), "%Y-%m-%d").date()
+            except (KeyError, TypeError, ValueError) as exc:
+                raise FreeObservationEvaluationError("FREE_OBSERVATION_INPUT_INVALID", "观测批次交易日期无效") from exc
+            if batch_trade_date > fetched_at.date():
+                raise FreeObservationEvaluationError(
+                    "FREE_OBSERVATION_FUTURE_TRADE_DATE",
+                    "观测批次交易日期晚于实际抓取日期",
+                )
             batch_hashes.append(expected_batch_hash)
             observed_values.append(fetched_at)
             for row in rows:

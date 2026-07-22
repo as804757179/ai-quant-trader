@@ -47,7 +47,7 @@ class FreeObservationDailyReportTests(TestCase):
             "trade_date": trade_date, "raw_payload_hash": "a" * 64, "rows": [row],
             "data_mode": "free_observation", "data_qualification": "unverified", "formal_use": False,
             "available_at": None, "available_at_status": "unverified",
-            "fetched_at": datetime(2026, 7, 22, 15, 5, tzinfo=timezone.utc).isoformat(),
+            "fetched_at": datetime.fromisoformat(f"{trade_date}T15:05:00+00:00").isoformat(),
         }
         artifact["batch_hash"] = FreeObservationDualMaEvaluator._hash({key: artifact[key] for key in ("provider", "source", "dataset_version", "trade_date", "raw_payload_hash", "rows")})
         return artifact

@@ -59,7 +59,7 @@ class FreeObservationDualMaTests(TestCase):
             "formal_use": False,
             "available_at": None,
             "available_at_status": "unverified",
-            "fetched_at": datetime(2026, 7, 22, 15, 5, tzinfo=timezone.utc).isoformat(),
+            "fetched_at": datetime.fromisoformat(f"{trade_date}T15:05:00+00:00").isoformat(),
         }
         artifact["batch_hash"] = FreeObservationDualMaEvaluator._hash(
             {key: artifact[key] for key in ("provider", "source", "dataset_version", "trade_date", "raw_payload_hash", "rows")}
@@ -107,6 +107,13 @@ class FreeObservationDualMaTests(TestCase):
             FreeObservationDualMaEvaluator.evaluate(
                 artifacts=[duplicate, duplicate], strategy_snapshot=self.snapshot
             )
+
+    def test_rejects_trade_date_after_fetched_date(self) -> None:
+        artifact = self._artifact("2026-07-23", 10.0)
+        artifact["fetched_at"] = datetime(2026, 7, 22, 15, 5, tzinfo=timezone.utc).isoformat()
+        with self.assertRaises(FreeObservationEvaluationError) as raised:
+            FreeObservationDualMaEvaluator.evaluate(artifacts=[artifact], strategy_snapshot=self.snapshot)
+        self.assertEqual(raised.exception.code, "FREE_OBSERVATION_FUTURE_TRADE_DATE")
 
     def test_command_writes_new_observation_only_candidate_file(self) -> None:
         script = BACKEND_ROOT / "scripts" / "evaluate_free_observation_dual_ma.py"
