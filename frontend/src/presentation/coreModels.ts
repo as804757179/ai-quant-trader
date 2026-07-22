@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { get, type APIResponse } from "../api/client";
+import { get, post, type APIResponse } from "../api/client";
 import type { DisplayState, ReleaseLock } from "./contracts";
 import { loadingState, pendingState, readOptional } from "./readOnlyApi";
 
@@ -704,11 +704,43 @@ export interface ResearchHoldingReviewListData {
 }
 
 export interface FinancialLocationReviewListData {
-  items?: Array<{ review_id?: string; location_id?: string; conclusion?: string; reason?: string; reviewed_at?: string; reviewer_label?: string; field_name?: string; location_status?: string; page_number?: number }>;
+  items?: Array<{ review_id?: string; location_id?: string; snapshot_id?: string; parse_run_id?: string; page_evidence_id?: string; raw_hash?: string; locator_version?: string; conclusion?: string; reason?: string; reviewed_at?: string; reviewer_label?: string; field_name?: string; location_status?: string; page_number?: number }>;
   total?: number;
   page?: number;
   page_size?: number;
   review_scope?: string;
+  source_version?: string;
+  research_readiness?: string;
+  tradable?: boolean;
+  order_created?: boolean;
+}
+
+export interface FinancialLocationCandidateListData {
+  evidence?: ResearchEvidenceDetail;
+  items?: Array<{ location_id?: string; parse_run_id?: string; page_evidence_id?: string; field_name?: string; raw_value?: string; normalized_value?: string; anchor_hash?: string; statement_scope?: string; status?: string; reason?: string; locator_version?: string; page_number?: number; extraction_status?: string; text_hash?: string }>;
+  total?: number;
+  page?: number;
+  page_size?: number;
+  has_more?: boolean;
+  summary?: { located?: number; ambiguous?: number; unresolved?: number; rejected?: number };
+  location_status?: string;
+  observed_only?: boolean;
+  research_readiness?: string;
+  tradable?: boolean;
+  order_created?: boolean;
+  source?: string;
+  source_version?: string;
+}
+
+export interface FinancialLocationReviewRequest {
+  location_id: string;
+  conclusion: "confirmed" | "rejected" | "ambiguous" | "needs_more_evidence";
+  reason: string;
+}
+
+export interface FinancialLocationReviewAppendData {
+  item?: NonNullable<FinancialLocationReviewListData["items"]>[number];
+  source?: string;
   source_version?: string;
   research_readiness?: string;
   tradable?: boolean;
@@ -1066,8 +1098,24 @@ export function useResearchEvidenceDetail(evidenceId?: string) {
   return useReadOnlyDisplay<ResearchEvidenceDetail>(evidenceId ? () => get<ResearchEvidenceDetail>(`/research/evidence/${encodeURIComponent(evidenceId)}`) : undefined, `research-evidence-detail-v1:${evidenceId ?? "unselected"}`);
 }
 
-export function useFinancialLocationReviews(evidenceId?: string) {
-  return useReadOnlyDisplay<FinancialLocationReviewListData>(evidenceId ? () => get<FinancialLocationReviewListData>(`/research/evidence/${encodeURIComponent(evidenceId)}/financial-location-reviews`, { page: 1, page_size: 50 }) : undefined, `financial-location-review-v1:${evidenceId ?? "unselected"}`);
+export function useFinancialLocationCandidates(evidenceId?: string, page = 1, pageSize = 50, refreshVersion = 0) {
+  return useReadOnlyDisplay<FinancialLocationCandidateListData>(evidenceId ? () => get<FinancialLocationCandidateListData>(`/research/evidence/${encodeURIComponent(evidenceId)}/financial-location-candidates`, { page, page_size: pageSize }) : undefined, `financial-location-candidates-v1:${evidenceId ?? "unselected"}:p${page}:s${pageSize}:r${refreshVersion}`);
+}
+
+export function useFinancialLocationReviews(evidenceId?: string, refreshVersion = 0) {
+  return useReadOnlyDisplay<FinancialLocationReviewListData>(evidenceId ? () => get<FinancialLocationReviewListData>(`/research/evidence/${encodeURIComponent(evidenceId)}/financial-location-reviews`, { page: 1, page_size: 50 }) : undefined, `financial-location-review-v1:${evidenceId ?? "unselected"}:r${refreshVersion}`);
+}
+
+export function appendFinancialLocationReview(
+  evidenceId: string,
+  body: FinancialLocationReviewRequest,
+  idempotencyKey: string,
+) {
+  return post<FinancialLocationReviewAppendData>(
+    `/research/evidence/${encodeURIComponent(evidenceId)}/financial-location-reviews`,
+    body,
+    { headers: { "Idempotency-Key": idempotencyKey } },
+  );
 }
 
 export function usePortfolioSummary() {
