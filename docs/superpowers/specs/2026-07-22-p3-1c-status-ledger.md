@@ -6,6 +6,7 @@
 | --- | --- | --- |
 | P3-1C 决策材料 | `archived_not_frozen` | `2026-07-22-p3-1c-replay-data-admission-decision.md` |
 | P3-1D 数据源尽调 | `NO_COMPLIANT_REPLAY_DATA_SOURCE_FOUND` | `2026-07-22-p3-1d-replay-data-source-due-diligence.md`；无新官方许可或逐行 PIT/血缘证据时不重复搜索 |
+| 免费观测模拟轨道 | `accepted_not_formal` | `ADR-024-free-observation-simulation-mode.md`；仅允许独立、非认证的免费观测模式，不解除正式 P3 blockers |
 | Sprint13 十股名单 | `candidate_only` | 不继承 Sprint13 数据许可或工程验证语义；尚未冻结 |
 | `p3-replay-sprint13-10-candidate-v1` | `candidate_only` | `sample_hash=f5c702b8c04ecc9346cbc0786a5e87ebe962a5162c4f0c21238ff979fa274845` |
 | P3 replay Profile | `draft_disabled` | `P3_REPLAY_DUAL_MA_RAW_OHLCV_V1`；`enabled=false`；runner 不可用 |

@@ -344,6 +344,10 @@ P3-0 通用基础设施已完成最终验收，范围仅限 test-only shadow run
 
 P4-1C 已归档为 `archived_not_frozen`：在没有合规 Execution Reference 和独立对账来源前，`P4-1D_NOT_ADMITTED`。正式 P3 replay、P4 写入和 P5 均保持 blocked；synthetic/test-only 仅为工程验证，不能作为正式 Paper 准入或验收证据。
 
+## 免费观测模拟轨道
+
+`FREE_OBSERVATION_SIMULATION_V1` 已由 `ADR-024-free-observation-simulation-mode.md` 定义为零成本、本地开发的独立观测轨道。它不改变 P0-P5 的正式验收、Data Certification、Research Readiness、Execution Reference 或六个发布和交易锁。后续仅可接入条款明确允许自动化调用的免费来源；许可、时间或血缘证据不明时必须返回 `unverified` 或 `unavailable`，不得进入认证、可信回测、正式 Paper 或交易链路。
+
 ### 10.3 P5 盘后复盘与策略优化
 
 页面包括每日复盘、交易复盘、错失机会、候选复核、策略变更审批和相关日志。必须有真实 Paper 账务闭环和足够运行样本；优化只能产生待审批候选，不能自动修改当前策略。
