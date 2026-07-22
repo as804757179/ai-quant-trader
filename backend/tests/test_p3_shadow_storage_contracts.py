@@ -48,6 +48,7 @@ class P3ShadowStorageContractTests(unittest.TestCase):
         self.assertIn("CHECK (order_count = 0)", source)
         self.assertIn("idempotency_key VARCHAR(128) NOT NULL UNIQUE", source)
         self.assertIn("decision_dedup_key CHAR(64) NOT NULL UNIQUE", source)
+        self.assertIn('op.execute("DROP SCHEMA IF EXISTS shadow CASCADE")', source)
 
     def test_repository_reuses_same_idempotency_input(self):
         existing = {"run_id": str(uuid4()), "request_hash": "a" * 64, "status": "created"}

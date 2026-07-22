@@ -118,4 +118,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    raise RuntimeError("042 preserves P3-0 shadow audit records and cannot be downgraded destructively")
+    op.execute("DROP SCHEMA IF EXISTS shadow CASCADE")
