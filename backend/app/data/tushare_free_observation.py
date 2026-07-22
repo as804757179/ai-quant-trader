@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Any
@@ -182,6 +183,14 @@ class TushareFreeObservationClient:
             if stock_code in stock_codes:
                 raise FreeObservationError("FREE_OBSERVATION_ROW_DUPLICATE", "免费观测日线存在重复股票行")
             stock_codes.add(stock_code)
+            try:
+                prices = {field: float(row[field]) for field in ("open", "high", "low", "close")}
+            except (TypeError, ValueError) as exc:
+                raise FreeObservationError("FREE_OBSERVATION_OHLC_INVALID", "免费观测日线 OHLC 不是有效数值") from exc
+            if any(not math.isfinite(value) or value <= 0 for value in prices.values()):
+                raise FreeObservationError("FREE_OBSERVATION_OHLC_INVALID", "免费观测日线 OHLC 必须为有限正数")
+            if prices["low"] > min(prices["open"], prices["close"]) or prices["high"] < max(prices["open"], prices["close"]):
+                raise FreeObservationError("FREE_OBSERVATION_OHLC_INVALID", "免费观测日线 OHLC 高低价关系无效")
 
     @staticmethod
     def _hash(value: object) -> str:

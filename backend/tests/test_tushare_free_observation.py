@@ -84,6 +84,17 @@ class TushareFreeObservationTests(unittest.TestCase):
             duplicate.fetch_daily(trade_date=date(2026, 7, 22))
         self.assertEqual(duplicate_error.exception.code, "FREE_OBSERVATION_ROW_DUPLICATE")
 
+    def test_rejects_invalid_ohlc_values(self) -> None:
+        fields = ["ts_code", "trade_date", "open", "high", "low", "close"]
+        non_numeric = self._client({"code": 0, "data": {"fields": fields, "items": [["000001.SZ", "20260722", "bad", 10, 9, 10]]}})
+        with self.assertRaises(FreeObservationError) as numeric_error:
+            non_numeric.fetch_daily(trade_date=date(2026, 7, 22))
+        self.assertEqual(numeric_error.exception.code, "FREE_OBSERVATION_OHLC_INVALID")
+        invalid_range = self._client({"code": 0, "data": {"fields": fields, "items": [["000001.SZ", "20260722", 10, 9, 8, 10]]}})
+        with self.assertRaises(FreeObservationError) as range_error:
+            invalid_range.fetch_daily(trade_date=date(2026, 7, 22))
+        self.assertEqual(range_error.exception.code, "FREE_OBSERVATION_OHLC_INVALID")
+
     def test_command_requires_confirmation_and_never_overwrites(self) -> None:
         script = BACKEND_ROOT / "scripts" / "fetch_free_observation_daily.py"
         base = [sys.executable, str(script), "--trade-date", "2026-07-22", "--output", "unused.json"]
