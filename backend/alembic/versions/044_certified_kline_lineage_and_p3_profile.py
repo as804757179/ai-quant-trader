@@ -13,7 +13,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute("""
+    op.get_bind().exec_driver_sql("""
         CREATE TABLE market.certified_kline_lineage (
             lineage_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
             stock_code VARCHAR(12) NOT NULL,
@@ -49,7 +49,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("""
+    op.get_bind().exec_driver_sql("""
         DELETE FROM market.research_requirement_profiles WHERE requirement_profile = 'P3_REPLAY_DUAL_MA_RAW_OHLCV_V1';
         ALTER TABLE market.research_requirement_profiles DROP COLUMN contract;
         ALTER TABLE market.research_requirement_profiles DROP COLUMN status;
