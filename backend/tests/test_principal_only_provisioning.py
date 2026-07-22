@@ -8,7 +8,10 @@ os.environ.setdefault("SECRET_KEY", "principal-only-test")
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/test")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.provision_api_principal import principal_only_request_hash
+from scripts.provision_api_principal import (
+    principal_only_request_hash,
+    validate_principal_only_args,
+)
 
 
 def args(**overrides):
@@ -22,6 +25,17 @@ class PrincipalOnlyProvisioningTests(unittest.TestCase):
         self.assertEqual(principal_only_request_hash(args()), principal_only_request_hash(args()))
         self.assertNotEqual(principal_only_request_hash(args(reason="other")), principal_only_request_hash(args()))
 
+    def test_principal_only_allows_only_explicit_human_governance_roles(self):
+        validate_principal_only_args(args())
+        validate_principal_only_args(args(
+            display_name="local-research-reviewer",
+            role="research_reviewer",
+        ))
+        with self.assertRaises(ValueError):
+            validate_principal_only_args(args(role="data_operator"))
+        with self.assertRaises(ValueError):
+            validate_principal_only_args(args(principal_type="service"))
+
     def test_source_keeps_principal_only_separate_from_credential_insert(self):
         source = (Path(__file__).resolve().parents[1] / "scripts" / "provision_api_principal.py").read_text(encoding="utf-8")
         body = source[source.index("async def provision_principal_only"):source.index("async def provision(")]
@@ -29,6 +43,7 @@ class PrincipalOnlyProvisioningTests(unittest.TestCase):
         self.assertIn("AUTH_PRINCIPAL_BOOTSTRAPPED", body)
         self.assertIn("owner_confirmed_by_user", body)
         self.assertIn("idempotency_key", body)
+        self.assertIn("role = :role", body)
 
 
 if __name__ == "__main__":

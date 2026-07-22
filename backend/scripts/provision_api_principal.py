@@ -19,6 +19,7 @@ from app.db import get_db
 
 
 SERVICE_ROLES = frozenset({"service_worker", "auditor", "admin"})
+PRINCIPAL_ONLY_HUMAN_ROLES = frozenset({"strategy_admin", "research_reviewer"})
 
 
 def parse_scopes(raw_scopes: str | None, role: str) -> list[str]:
@@ -49,6 +50,12 @@ def principal_only_request_hash(args: argparse.Namespace) -> str:
     ).hexdigest()
 
 
+def validate_principal_only_args(args: argparse.Namespace) -> None:
+    if args.principal_type != "human" or args.role not in PRINCIPAL_ONLY_HUMAN_ROLES:
+        allowed_roles = ", ".join(sorted(PRINCIPAL_ONLY_HUMAN_ROLES))
+        raise ValueError(f"principal-only 仅允许 human {allowed_roles}")
+
+
 async def provision_principal_only(args: argparse.Namespace) -> dict:
     if not args.bootstrap_operator or not args.owner_confirmed_by_user:
         raise ValueError("principal-only 需要已确认的 bootstrap_operator 和用户确认标记")
@@ -74,10 +81,10 @@ async def provision_principal_only(args: argparse.Namespace) -> dict:
             SELECT principal_id FROM auth.principals WHERE display_name = :display_name
             UNION ALL
             SELECT principal_id FROM auth.principals
-            WHERE principal_type = 'human' AND role = 'strategy_admin' AND is_active IS TRUE
-        """), {"display_name": args.display_name})
+            WHERE principal_type = 'human' AND role = :role AND is_active IS TRUE
+        """), {"display_name": args.display_name, "role": args.role})
         if duplicate.mappings().first():
-            raise ValueError("同名 principal 或 active human strategy_admin 已存在")
+            raise ValueError(f"同名 principal 或 active human {args.role} 已存在")
         principal_id = str(uuid4())
         await db.execute(text("""
             INSERT INTO auth.principals (principal_id, display_name, principal_type, role, metadata)
@@ -213,8 +220,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.expires_in_days < 0:
         raise ValueError("expires-in-days 不能为负数")
     if args.principal_only:
-        if args.principal_type != "human" or args.role != "strategy_admin":
-            raise ValueError("principal-only 当前仅允许 human strategy_admin")
+        validate_principal_only_args(args)
         if not args.idempotency_key or not 8 <= len(args.idempotency_key) <= 128:
             raise ValueError("principal-only 需要有效 idempotency_key")
         result = asyncio.run(provision_principal_only(args))
