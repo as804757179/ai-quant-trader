@@ -50,6 +50,10 @@ class P3ShadowStorageContractTests(unittest.TestCase):
         self.assertIn("decision_dedup_key CHAR(64) NOT NULL UNIQUE", source)
         self.assertIn('op.execute("DROP SCHEMA IF EXISTS shadow CASCADE")', source)
 
+    def test_list_runs_casts_optional_status_for_postgresql(self):
+        source = (REPO_ROOT / "backend/app/shadow/repository.py").read_text(encoding="utf-8")
+        self.assertIn("CAST(:status AS varchar)", source)
+
     def test_repository_reuses_same_idempotency_input(self):
         existing = {"run_id": str(uuid4()), "request_hash": "a" * 64, "status": "created"}
         db = _Db(existing)

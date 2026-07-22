@@ -87,7 +87,7 @@ class ShadowRepository:
     ) -> tuple[list[dict[str, Any]], int]:
         page, page_size = self._page(page, page_size)
         params = {"status": status, "limit": page_size, "offset": (page - 1) * page_size}
-        where = "WHERE (:status IS NULL OR status = :status)"
+        where = "WHERE (CAST(:status AS varchar) IS NULL OR status = CAST(:status AS varchar))"
         total = await db.scalar(text(f"SELECT COUNT(*) FROM shadow.runs {where}"), params)
         result = await db.execute(
             text(
