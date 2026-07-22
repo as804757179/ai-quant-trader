@@ -282,34 +282,42 @@ async def list_observed_quotes(
         params["freshness_status"] = freshness_status
     where_clause = " AND ".join(filters)
     latest_quotes_cte = f"""
-        WITH latest_quotes AS (
-            SELECT DISTINCT ON (quote.stock_code)
-                   quote.stock_code, stock.market, stock.board, quote.time AS quote_time,
-                   quote.price, quote.bid1_price, quote.bid1_vol,
-                   quote.bid2_price, quote.bid2_vol, quote.bid3_price, quote.bid3_vol,
-                   quote.ask1_price, quote.ask1_vol,
-                   quote.ask2_price, quote.ask2_vol, quote.ask3_price, quote.ask3_vol,
-                   provenance.provider, provenance.source, provenance.fetch_endpoint,
-                   provenance.provider_time, provenance.fetched_at, provenance.received_at,
-                   provenance.batch_id::text AS batch_id, provenance.raw_hash,
-                   provenance.fallback_used, provenance.quality_status,
-                   provenance.collector_version, provenance.normalizer_version,
-                   batch.status AS batch_status,
-                   GREATEST(0, EXTRACT(EPOCH FROM (:now - quote.time)))::bigint AS lag_seconds,
-                   CASE WHEN quote.time >= :fresh_cutoff THEN 'fresh' ELSE 'stale' END AS freshness_status,
-                   CASE
-                       WHEN quote.bid1_price IS NOT NULL AND quote.ask1_price IS NOT NULL
-                       THEN 'level_1_recorded'
-                       ELSE 'not_recorded'
-                   END AS order_book_status
-            FROM market.quotes AS quote
-            INNER JOIN market.quote_provenance AS provenance
-                ON provenance.stock_code = quote.stock_code
-               AND provenance.quote_time = quote.time
-            INNER JOIN market.quote_batches AS batch ON batch.batch_id = provenance.batch_id
-            LEFT JOIN fundamental.stocks AS stock ON stock.code = quote.stock_code
-            WHERE {where_clause}
-            ORDER BY quote.stock_code, quote.time DESC, provenance.received_at DESC
+        WITH eligible_stock_codes AS MATERIALIZED (
+            SELECT DISTINCT provenance.stock_code
+            FROM market.quote_provenance AS provenance
+            WHERE provenance.quality_status = 'pass' AND provenance.fallback_used = FALSE
+        ), latest_quotes AS (
+            SELECT observed.*
+            FROM eligible_stock_codes AS codes
+            CROSS JOIN LATERAL (
+                SELECT quote.stock_code, stock.market, stock.board, quote.time AS quote_time,
+                       quote.price, quote.bid1_price, quote.bid1_vol,
+                       quote.bid2_price, quote.bid2_vol, quote.bid3_price, quote.bid3_vol,
+                       quote.ask1_price, quote.ask1_vol,
+                       quote.ask2_price, quote.ask2_vol, quote.ask3_price, quote.ask3_vol,
+                       provenance.provider, provenance.source, provenance.fetch_endpoint,
+                       provenance.provider_time, provenance.fetched_at, provenance.received_at,
+                       provenance.batch_id::text AS batch_id, provenance.raw_hash,
+                       provenance.fallback_used, provenance.quality_status,
+                       provenance.collector_version, provenance.normalizer_version,
+                       batch.status AS batch_status,
+                       GREATEST(0, EXTRACT(EPOCH FROM (:now - quote.time)))::bigint AS lag_seconds,
+                       CASE WHEN quote.time >= :fresh_cutoff THEN 'fresh' ELSE 'stale' END AS freshness_status,
+                       CASE
+                           WHEN quote.bid1_price IS NOT NULL AND quote.ask1_price IS NOT NULL
+                           THEN 'level_1_recorded'
+                           ELSE 'not_recorded'
+                       END AS order_book_status
+                FROM market.quote_provenance AS provenance
+                INNER JOIN market.quotes AS quote
+                    ON quote.stock_code = provenance.stock_code
+                   AND quote.time = provenance.quote_time
+                INNER JOIN market.quote_batches AS batch ON batch.batch_id = provenance.batch_id
+                LEFT JOIN fundamental.stocks AS stock ON stock.code = quote.stock_code
+                WHERE provenance.stock_code = codes.stock_code AND {where_clause}
+                ORDER BY provenance.quote_time DESC, provenance.received_at DESC
+                LIMIT 1
+            ) AS observed
         )
     """
     async with get_db() as db:
@@ -387,31 +395,39 @@ async def list_observed_liquidity(
         params["freshness_status"] = freshness_status
     where_clause = " AND ".join(filters)
     latest_liquidity_cte = f"""
-        WITH latest_liquidity AS (
-            SELECT DISTINCT ON (quote.stock_code)
-                   quote.stock_code, stock.market, stock.board, quote.time AS quote_time,
-                   quote.volume, quote.amount,
-                   'realtime_snapshot' AS period,
-                   'shares' AS volume_unit,
-                   CASE WHEN quote.volume IS NULL THEN 'not_recorded' ELSE 'observed' END AS volume_status,
-                   'not_recorded' AS amount_unit,
-                   CASE WHEN quote.amount IS NULL THEN 'not_recorded' ELSE 'unverified' END AS amount_status,
-                   provenance.provider, provenance.source, provenance.fetch_endpoint,
-                   provenance.provider_time, provenance.fetched_at, provenance.received_at,
-                   provenance.batch_id::text AS batch_id, provenance.raw_hash,
-                   provenance.fallback_used, provenance.quality_status,
-                   provenance.collector_version, provenance.normalizer_version,
-                   batch.status AS batch_status,
-                   GREATEST(0, EXTRACT(EPOCH FROM (:now - quote.time)))::bigint AS lag_seconds,
-                   CASE WHEN quote.time >= :fresh_cutoff THEN 'fresh' ELSE 'stale' END AS freshness_status
-            FROM market.quotes AS quote
-            INNER JOIN market.quote_provenance AS provenance
-                ON provenance.stock_code = quote.stock_code
-               AND provenance.quote_time = quote.time
-            INNER JOIN market.quote_batches AS batch ON batch.batch_id = provenance.batch_id
-            LEFT JOIN fundamental.stocks AS stock ON stock.code = quote.stock_code
-            WHERE {where_clause}
-            ORDER BY quote.stock_code, quote.time DESC, provenance.received_at DESC
+        WITH eligible_stock_codes AS MATERIALIZED (
+            SELECT DISTINCT provenance.stock_code
+            FROM market.quote_provenance AS provenance
+            WHERE provenance.quality_status = 'pass' AND provenance.fallback_used = FALSE
+        ), latest_liquidity AS (
+            SELECT observed.*
+            FROM eligible_stock_codes AS codes
+            CROSS JOIN LATERAL (
+                SELECT quote.stock_code, stock.market, stock.board, quote.time AS quote_time,
+                       quote.volume, quote.amount,
+                       'realtime_snapshot' AS period,
+                       'shares' AS volume_unit,
+                       CASE WHEN quote.volume IS NULL THEN 'not_recorded' ELSE 'observed' END AS volume_status,
+                       'not_recorded' AS amount_unit,
+                       CASE WHEN quote.amount IS NULL THEN 'not_recorded' ELSE 'unverified' END AS amount_status,
+                       provenance.provider, provenance.source, provenance.fetch_endpoint,
+                       provenance.provider_time, provenance.fetched_at, provenance.received_at,
+                       provenance.batch_id::text AS batch_id, provenance.raw_hash,
+                       provenance.fallback_used, provenance.quality_status,
+                       provenance.collector_version, provenance.normalizer_version,
+                       batch.status AS batch_status,
+                       GREATEST(0, EXTRACT(EPOCH FROM (:now - quote.time)))::bigint AS lag_seconds,
+                       CASE WHEN quote.time >= :fresh_cutoff THEN 'fresh' ELSE 'stale' END AS freshness_status
+                FROM market.quote_provenance AS provenance
+                INNER JOIN market.quotes AS quote
+                    ON quote.stock_code = provenance.stock_code
+                   AND quote.time = provenance.quote_time
+                INNER JOIN market.quote_batches AS batch ON batch.batch_id = provenance.batch_id
+                LEFT JOIN fundamental.stocks AS stock ON stock.code = quote.stock_code
+                WHERE provenance.stock_code = codes.stock_code AND {where_clause}
+                ORDER BY provenance.quote_time DESC, provenance.received_at DESC
+                LIMIT 1
+            ) AS observed
         )
     """
     async with get_db() as db:

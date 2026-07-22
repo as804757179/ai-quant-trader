@@ -67,6 +67,16 @@ class RealtimeQuoteProvenanceContractTests(unittest.TestCase):
         self.assertIn("provider NOT IN ('unknown', 'synthetic')", migration)
         self.assertIn("fallback_used = FALSE", migration)
 
+    def test_latest_observed_quote_read_indexes_are_append_only(self):
+        migration = (ROOT / "backend/alembic/versions/046_observed_quote_latest_read_indexes.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('down_revision = "045"', migration)
+        self.assertIn("idx_quotes_stock_code_time_desc", migration)
+        self.assertIn("idx_quote_provenance_observed_latest", migration)
+        self.assertIn("quality_status = 'pass' AND fallback_used = FALSE", migration)
+        self.assertNotIn("ALTER TABLE", migration)
+
     def test_quote_batch_lifecycle_has_explicit_running_state(self):
         migration = (ROOT / "backend/alembic/versions/017_quote_batch_running_status.py").read_text(
             encoding="utf-8"
@@ -145,7 +155,9 @@ class RealtimeQuoteProvenanceContractTests(unittest.TestCase):
         self.assertEqual(db.params[0]["market"], "SZ")
         self.assertEqual(db.params[0]["board"], "主板")
         self.assertEqual(db.params[0]["freshness_status"], "fresh")
-        self.assertIn("DISTINCT ON (quote.stock_code)", db.sql[0])
+        self.assertIn("eligible_stock_codes AS MATERIALIZED", db.sql[0])
+        self.assertIn("CROSS JOIN LATERAL", db.sql[0])
+        self.assertIn("ORDER BY provenance.quote_time DESC, provenance.received_at DESC", db.sql[0])
         self.assertIn("market.quote_provenance", db.sql[1])
         self.assertIn("ORDER BY quote_time DESC, stock_code ASC", db.sql[1])
         self.assertFalse(
@@ -193,7 +205,9 @@ class RealtimeQuoteProvenanceContractTests(unittest.TestCase):
         self.assertEqual(db.params[0]["market"], "SZ")
         self.assertIn("quote.amount", db.sql[0])
         self.assertIn("'not_recorded' AS amount_unit", db.sql[0])
-        self.assertIn("DISTINCT ON (quote.stock_code)", db.sql[0])
+        self.assertIn("eligible_stock_codes AS MATERIALIZED", db.sql[0])
+        self.assertIn("CROSS JOIN LATERAL", db.sql[0])
+        self.assertIn("ORDER BY provenance.quote_time DESC, provenance.received_at DESC", db.sql[0])
         self.assertIn("market.quote_provenance", db.sql[1])
         self.assertIn("ORDER BY quote_time DESC, stock_code ASC", db.sql[1])
         self.assertFalse(
