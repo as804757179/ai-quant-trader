@@ -10,6 +10,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from unittest import TestCase
+from unittest.mock import patch
 
 os.environ.setdefault("APP_ENV", "development")
 os.environ.setdefault("SECRET_KEY", "free-observation-daily-report-test-secret-key")
@@ -24,6 +25,7 @@ from app.data.free_observation_daily_report import FreeObservationDailyReport, F
 from app.data.free_observation_dual_ma import FreeObservationDualMaEvaluator  # noqa: E402
 from app.data.free_observation_ledger import FreeObservationLedger  # noqa: E402
 from app.data.free_observation_review import FreeObservationReview  # noqa: E402
+from app.core.config import settings  # noqa: E402
 from app.data.tushare_free_observation import TUSHARE_DATASET_VERSION, TUSHARE_PROVIDER, TUSHARE_SOURCE  # noqa: E402
 from app.shadow.contracts import RELEASE_LOCK_KEYS  # noqa: E402
 from app.strategy.version_service import StrategyVersionService  # noqa: E402
@@ -90,6 +92,13 @@ class FreeObservationDailyReportTests(TestCase):
         with self.assertRaises(FreeObservationDailyReportError) as invalid_review:
             FreeObservationDailyReport.build(candidate_document=candidate, ledger_document=ledger, review_document=review)
         self.assertEqual(invalid_review.exception.code, "FREE_OBSERVATION_REPORT_REVIEW_HASH_MISMATCH")
+
+    def test_rejects_current_open_release_lock(self) -> None:
+        candidate, ledger, review = self._documents()
+        with patch.object(settings, "AI_ORDER_ENABLED", True):
+            with self.assertRaises(FreeObservationDailyReportError) as locked:
+                FreeObservationDailyReport.build(candidate_document=candidate, ledger_document=ledger, review_document=review)
+        self.assertEqual(locked.exception.code, "FREE_OBSERVATION_REPORT_LOCK_INVALID")
 
     def test_command_writes_new_file_and_refuses_production(self) -> None:
         candidate, ledger, review = self._documents()

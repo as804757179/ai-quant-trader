@@ -30,6 +30,7 @@ class FreeObservationDailyReport:
         review_document: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         cls._assert_local_environment()
+        cls._assert_release_locks_closed()
         candidate_hashes, candidates = cls._candidate(candidate_document)
         cls._ledger(ledger_document, candidate_document["result_hash"], candidate_hashes)
         review = cls._review(review_document, candidate_document["result_hash"])
@@ -106,6 +107,11 @@ class FreeObservationDailyReport:
     def _assert_local_environment() -> None:
         if settings.is_production() or settings.APP_ENV.strip().lower() not in {"development", "local_development"}:
             raise FreeObservationDailyReportError("FREE_OBSERVATION_LOCAL_ENV_REQUIRED", "免费观测报告仅允许 local_development")
+
+    @staticmethod
+    def _assert_release_locks_closed() -> None:
+        if any(bool(getattr(settings, key)) for key in RELEASE_LOCK_KEYS):
+            raise FreeObservationDailyReportError("FREE_OBSERVATION_REPORT_LOCK_INVALID", "发布或交易锁未保持 false")
 
     @staticmethod
     def _hash(payload: object) -> str:
